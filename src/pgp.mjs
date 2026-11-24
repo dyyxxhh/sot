@@ -1,7 +1,26 @@
-import { createMessage, enums, readKey, readSignature, verify } from 'openpgp';
+import { createMessage, enums, PacketList, PublicKey, PublicKeyPacket, PublicSubkeyPacket, readSignature, SignaturePacket, unarmor, UserAttributePacket, UserIDPacket, verify } from 'openpgp';
 
 const armored = new TextEncoder().encode('-----BEGIN PGP');
 const looksArmored = data => armored.every((byte, i) => data[i] === byte);
+const publicPackets = Object.fromEntries(
+  [PublicKeyPacket, PublicSubkeyPacket, SignaturePacket, UserAttributePacket, UserIDPacket].map(Packet => [Packet.tag, Packet]),
+);
+
+async function readPublicKey(file) {
+  if (!file.size || file.size > 1024 * 1024) throw new Error('公钥大小无效。');
+  let data = new Uint8Array(await file.arrayBuffer());
+  if (looksArmored(data)) {
+    const unpacked = await unarmor(new TextDecoder().decode(data));
+    if (unpacked.type !== enums.armor.publicKey) throw new Error('请只选择公钥，不要导入私钥。');
+    data = unpacked.data;
+  }
+  // Exclude secret-key packets, including binary exports.
+  let packets;
+  try { packets = await PacketList.fromBinary(data, publicPackets); }
+  catch { throw new Error('文件不是有效的 OpenPGP 公钥；请勿导入私钥。'); }
+  if (packets.indexOfTag(enums.packet.publicKey).length !== 1) throw new Error('请选择只含一个 OpenPGP 公钥的文件。');
+  return new PublicKey(packets);
+}
 export async function readDetached(detached) {
   if (!detached.size || detached.size > 1024 * 1024) throw new Error('签名大小无效。');
   const sig = new Uint8Array(await detached.arrayBuffer());
@@ -14,11 +33,8 @@ export async function readDetached(detached) {
 
 export async function verifyPgp(original, detached, publicKey) {
   if (!original || !detached || !publicKey) throw new Error('原文件、分离签名和公钥均必需。');
-  if (publicKey.size > 1024 * 1024) throw new Error('公钥过大。');
   const signature = await readDetached(detached);
-  const key = new Uint8Array(await publicKey.arrayBuffer());
-  const verificationKeys = await readKey(looksArmored(key) ? { armoredKey: new TextDecoder().decode(key) } : { binaryKey: key });
-  if (verificationKeys.isPrivate()) throw new Error('请只选择公钥，不要导入私钥。');
+  const verificationKeys = await readPublicKey(publicKey);
   const message = await createMessage({ binary: original.stream() });
   const { signatures, data } = await verify({ message, signature, verificationKeys, format: 'binary' });
   if (signatures.length !== 1) throw new Error('没有可验证的 OpenPGP 签名。');

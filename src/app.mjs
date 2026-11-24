@@ -1,9 +1,10 @@
-import { makeBundle, readBundle } from './bundle.mjs';
+import { checkOriginal, makeBundle, readBundle } from './bundle.mjs';
 import { hashBlob } from './hash.mjs';
 import { stampOts, upgradeOts, verifyOts } from './ots.mjs';
 import { readDetached, verifyPgp } from './pgp.mjs';
 import { tsa } from './providers.mjs';
-import { loadTrust, requestTsa, verifyTsr } from './tsa.mjs';
+import { requestTsa, verifyTsr } from './tsa.mjs';
+import { getTrust } from './trust.mjs';
 
 const el = id => document.getElementById(id);
 const selected = id => el(id).files[0];
@@ -53,7 +54,7 @@ async function imported(file, blob, digest, target) {
   }
   for (const id of Object.keys(tsa)) {
     try {
-      await verifyTsr(file, blob, { ...await loadTrust(id), digest });
+      await verifyTsr(file, blob, { ...getTrust(id), digest });
       return { type: 'tsr', authority: id, target, blob: file };
     } catch { /* distinguish supported authority by its certificate, not by filename */ }
   }
@@ -67,6 +68,7 @@ function make(online) {
     const authorities = online ? [...create.querySelectorAll('[name=authority]:checked')].map(input => input.value) : [];
     const files = [...el('existing').files];
     if (!original || !targetBlob) throw new Error('请先选择原文件及所需的签名。');
+    checkOriginal(kind, original);
     if (!authorities.length && !files.length) throw new Error('请选择签发机构或导入已有凭证。');
     if (signature) await readDetached(signature);
     const digest = await hashBlob(targetBlob);
@@ -82,7 +84,7 @@ function make(online) {
     const fresh = authorities.filter(id => !proofs.some(p => (p.authority ?? p.type) === id));
     const replies = await Promise.allSettled(fresh.map(async id => id === 'ots'
       ? { type: 'ots', target, blob: await stampOts(digest) }
-      : { type: 'tsr', authority: id, target, blob: await requestTsa(id, digest, targetBlob) }));
+      : { type: 'tsr', authority: id, target, blob: await requestTsa(id, digest, targetBlob, getTrust(id)) }));
     replies.forEach((reply, i) => {
       const id = fresh[i], label = tsa[id]?.label ?? 'OpenTimestamps';
       if (reply.status === 'fulfilled') {
@@ -129,7 +131,7 @@ function inspect(online) {
       if (!target) { messages.push(`${label}：缺少原文件，未验证。`); continue; }
       try {
         if (proof.type === 'tsr') {
-          const { time } = await verifyTsr(proof.blob, target, await loadTrust(proof.authority));
+          const { time } = await verifyTsr(proof.blob, target, getTrust(proof.authority));
           messages.push(`${label}：有效 · ${time}`);
           if (proof.target === 'signature') signatureTimes.push(time);
         } else {

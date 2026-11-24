@@ -51,6 +51,9 @@ try {
   await context.setOffline(true);
   await page.reload();
   await expectText('offline-state', '离线工具已缓存');
+  const offlineRequests = [];
+  const collectOffline = request => { if (/^https?:/.test(request.url())) offlineRequests.push(request.url()); };
+  page.on('request', collectOffline);
   await file('original', original);
   await file('existing', [fixture('hello-world.txt.ots'), fixture('hello-freetsa.tsr')]);
   await page.locator('input[value=fsot]').check();
@@ -78,6 +81,16 @@ try {
   await click('verify-local');
   await expectText('verify-status', 'OpenPGP：有效');
   assert.doesNotMatch(await page.locator('#verify-status').innerText(), /结合验签/);
+  for (const armored of [true, false]) {
+    const args = armored ? ['--armor'] : [];
+    const secretFixture = gpg('--pinentry-mode', 'loopback', '--passphrase', '', ...args, '--export-secret-keys', 'fixture@example.invalid');
+    await file('public-key', { name: 'scratch-key.pgp', mimeType: 'application/pgp-keys', buffer: secretFixture });
+    await click('verify-local');
+    await expectText('verify-status', /OpenPGP：验签失败；.*私钥/);
+  }
+  await file('public-key', key);
+  assert.deepEqual(offlineRequests, []);
+  page.off('request', collectOffline);
   console.log('PASS: offline reload, pack/import, native tar + GPG, FreeTSA, trusted Bitcoin header, later .sig not time-stamped');
 
   if (process.env.LIVE === '1') {

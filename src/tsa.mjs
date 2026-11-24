@@ -1,7 +1,6 @@
 import * as asn from 'asn1js';
 import * as pki from 'pkijs';
 import { hashBlob, hex, readLimited, same } from './hash.mjs';
-import { tsa } from './providers.mjs';
 
 const SHA = {
   '2.16.840.1.101.3.4.2.1': 'SHA-256',
@@ -106,22 +105,11 @@ export async function verifyTsr(blob, target, { root, signer, nonce, digest } = 
   return { time: info.genTime.toISOString(), imprint: hex(bytes(info.messageImprint.hashedMessage)) };
 }
 
-const trust = new Map();
-export async function loadTrust(id) {
-  if (!Object.hasOwn(tsa, id)) throw new Error(`没有为 ${id} 配置信任根。`);
-  if (!trust.has(id)) {
-    const get = async suffix => readCertificate(await (await readLimited(await fetch(`/roots/${id}${suffix}.pem`), 16 * 1024)).text());
-    const promise = Promise.all([get(''), tsa[id].signer && get('-signer')]).then(([root, signer]) => ({ root, signer }));
-    trust.set(id, promise);
-    promise.catch(() => trust.delete(id));
-  }
-  return trust.get(id);
-}
-export async function requestTsa(id, digest, target) {
+export async function requestTsa(id, digest, target, trust) {
   const query = makeRequest(digest);
   const blob = await readLimited(await fetch(`/api/tsa/${id}`, {
     method: 'POST', headers: { 'Content-Type': 'application/timestamp-query' }, body: query, signal: AbortSignal.timeout(16000),
   }), 256 * 1024);
-  await verifyTsr(blob, target, { ...await loadTrust(id), nonce: pki.TimeStampReq.fromBER(query).nonce, digest });
+  await verifyTsr(blob, target, { ...trust, nonce: pki.TimeStampReq.fromBER(query).nonce, digest });
   return blob;
 }

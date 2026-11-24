@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { makeBundle, readBundle } from '../src/bundle.mjs';
+import { checkOriginal, makeBundle, readBundle } from '../src/bundle.mjs';
 import { hashBlob, hex } from '../src/hash.mjs';
 import { readCertificate, verifyTsr } from '../src/tsa.mjs';
 
@@ -26,6 +26,12 @@ test('SHA-256 matches the OpenTimestamps upstream file digest', async () => {
   assert.equal(hex(await hashBlob(new Blob([await fixture('hello-world.txt')]))), '03ba204e50d126e4674c005e04d82e84c21366780af1f43bd54a37816b6ab340');
 });
 
+test('rejects an oversized .fsot before processing the file and permits .asot', () => {
+  const original = { size: 8589934592 };
+  assert.throws(() => checkOriginal('fsot', original), /请选择 \.asot/);
+  assert.doesNotThrow(() => checkOriginal('asot', original));
+});
+
 for (const kind of ['asot', 'fsot']) test(`${kind}: ordinary tar keeps exact Unicode paths, no extra entries, and original proof bytes`, async t => {
   const dir = await mkdtemp(join(tmpdir(), 'sot-tar-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -44,5 +50,11 @@ for (const kind of ['asot', 'fsot']) test(`${kind}: ordinary tar keeps exact Uni
   assert.equal(await result.original.text(), await original.text());
   assert.equal(await result.signature.text(), 'signature fixture');
   assert.equal(result.proofs[0].target, 'file');
+  if (kind === 'asot') {
+    const renamedOriginal = new File([original], 'renamed.txt');
+    const renamedArchive = new File([blob], 'renamed.asot');
+    assert.equal((await readBundle(new File([blob], filename), renamedOriginal)).name, name);
+    assert.equal((await readBundle(renamedArchive, original)).name, name);
+  }
   await assert.rejects(readBundle(new File([blob.slice(0, -1024)], filename), original), /tar/);
 });

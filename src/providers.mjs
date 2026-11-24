@@ -1,6 +1,6 @@
 export const tsa = {
   digicert: { label: 'DigiCert', url: 'http://timestamp.digicert.com' },
-  freetsa: { label: 'FreeTSA', url: 'https://freetsa.org/tsr', signer: true },
+  freetsa: { label: 'FreeTSA', url: 'https://freetsa.org/tsr' },
 };
 
 export const calendars = [

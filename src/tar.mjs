@@ -5,6 +5,7 @@ const pad = n => (BLOCK - n % BLOCK) % BLOCK;
 const zeros = n => new Uint8Array(n);
 const isZero = bytes => bytes.every(b => b === 0);
 const LIMIT = 128;
+export const MAX_ENTRY_SIZE = 8 ** 11 - 1;
 
 export function checkName(name) {
   if (!name || name === '.' || name === '..' || /[/\\:\u0000-\u001f\u007f]/u.test(name) || encoder.encode(name).length > 512) {
@@ -14,7 +15,7 @@ export function checkName(name) {
 }
 
 function header(name, size, type = '0') {
-  if (size >= 8 ** 11) throw new Error('单个归档条目须小于 8 GiB。');
+  if (size > MAX_ENTRY_SIZE) throw new Error('单个归档条目须小于 8 GiB。');
   const bytes = zeros(BLOCK);
   const put = (at, text) => bytes.set(encoder.encode(text), at);
   put(0, name);

@@ -68,22 +68,41 @@ async function validateHeader(record, height, commitment) {
 export async function verifyOts(blob, target, { headers = [], online = false, digest } = {}) {
   const ots = get(), stamp = await deserialize(blob);
   if (!(stamp.fileHashOp instanceof ots.Ops.OpSHA256) || !same(bytes(stamp.fileDigest()), digest ?? await hashBlob(target))) throw new Error('OTS 与文件不匹配或使用了不支持的哈希。');
-  const anchors = records(stamp).filter(({ att }) => att instanceof ots.Notary.BitcoinBlockHeaderAttestation);
+  const evidence = records(stamp);
+  const anchors = evidence.filter(({ att }) => att instanceof ots.Notary.BitcoinBlockHeaderAttestation);
   if (!anchors.length) {
-    if (!records(stamp).some(({ att }) => att instanceof ots.Notary.PendingAttestation)) throw new Error('回执没有比特币区块证明或待确认的日历证明。');
+    if (!evidence.some(({ att }) => att instanceof ots.Notary.PendingAttestation)) throw new Error('回执没有比特币区块证明或待确认的日历证明。');
     return { state: 'pending' };
   }
-  const heights = [...new Set(anchors.map(({ att }) => att.height))].sort((a, b) => a - b);
-  if (!online && !headers.length) return { state: 'needs-headers', heights };
-  for (const height of heights.slice(0, 8)) {
-    const local = headers.find(h => h.height === height);
-    if (!local && !online) continue;
-    const block = local ?? await lookup(height);
-    for (const { node, att } of anchors.filter(({ att }) => att.height === height)) {
-      try { return { state: 'verified', time: await validateHeader(block, height, node.msg), height, via: local ? 'local' : 'explorers' }; }
-      catch { /* a proof may offer more than one commitment for a height */ }
+  const commitments = new Map();
+  for (const { node, att } of anchors) {
+    if (!commitments.has(att.height)) commitments.set(att.height, []);
+    commitments.get(att.height).push(node.msg);
+  }
+  const heights = [...commitments.keys()].sort((a, b) => a - b);
+  const check = async (block, height, via) => {
+    for (const commitment of commitments.get(height)) {
+      try { return { state: 'verified', time: await validateHeader(block, height, commitment), height, via }; }
+      catch { /* one height can have multiple candidate commitments */ }
+    }
+  };
+  const supplied = headers.filter(block => commitments.has(block.height));
+  for (const block of supplied) {
+    const result = await check(block, block.height, 'local');
+    if (result) return result;
+  }
+  if (!online && !supplied.length) return { state: 'needs-headers', heights };
+  if (online) {
+    const maxLookups = 8;
+    const results = await Promise.all(heights.slice(0, maxLookups).map(async height => {
+      try { return { result: await check(await lookup(height), height, 'explorers') }; }
+      catch { return { unavailable: true }; }
+    }));
+    const match = results.find(item => item.result);
+    if (match) return match.result;
+    if (heights.length > maxLookups || results.some(item => item.unavailable)) {
+      throw new Error('未能查完所有区块，无法判定；可导入对应高度的可信区块头。');
     }
   }
-  if (!online && !headers.some(h => heights.includes(h.height))) return { state: 'needs-headers', heights };
   throw new Error('无法将 OTS 证明与提供的区块头匹配。');
 }
