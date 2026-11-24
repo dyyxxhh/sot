@@ -91,7 +91,7 @@ try {
   await page.locator('input[value=fsot]').check();
   await make();
   const archive = await download('make-status', 'hello-world.txt.fsot');
-  assert.deepEqual(new Set(entries(archive)), new Set(['hello-world.txt', 'hello-world.txt.ots', 'hello-world.txt-freetsa.tsr']));
+  assert.deepEqual(entries(archive), ['hello-world.txt', 'file-freetsa.tsr', 'file.ots']);
   const before = new Map(entries(archive).map(name => [name, extract(archive, name)]));
 
   await file('make-input', original);
@@ -108,7 +108,7 @@ try {
   assert.notEqual(await id('verify-online').evaluate(b => getComputedStyle(b).backgroundColor), await id('verify-local').evaluate(b => getComputedStyle(b).backgroundColor));
   await click('verify-local');
   await expectText('verify-status', '缺少区块头');
-  await expectText('verify-status', 'hello-world.txt-freetsa.tsr（原文件）：有效');
+  await expectText('verify-status', 'file-freetsa.tsr（原文件）：有效');
   await file('verify-headers', fixture('header.json'));
   await click('verify-local');
   await expectText('verify-status', '与提供的本地区块记录相符 · 区块 358391');
@@ -137,27 +137,26 @@ try {
   assert.equal(await id('verify-summary').getAttribute('data-result'), 'fail');
 
   await selectView('complete');
-  // A legacy extra .tar suffix is accepted but never emitted.
-  const legacy = join(dir, 'hello-world.txt.fsot.tar');
-  await writeFile(legacy, await readFile(archive));
-  await file('complete-input', legacy);
+  const renamed = join(dir, 'renamed.fsot');
+  await writeFile(renamed, await readFile(archive));
+  await file('complete-input', renamed);
   await id('complete-signature').waitFor();
   await file('complete-signature', signature);
   assert.equal(await id('complete-status').getByRole('link').count(), 0);
   await click('attach');
   await expectText('complete-status', '已有时间戳不覆盖新签名');
-  await download('complete-status', 'hello-world.txt.fsot');
-  for (const [name, bytes] of before) assert.deepEqual(extract(archive, name), bytes);
-  assert.deepEqual(extract(archive, 'hello-world.txt.sig'), await readFile(signature));
+  await download('complete-status', 'renamed.fsot');
+  for (const [name, bytes] of before) assert.deepEqual(extract(renamed, name), bytes);
+  assert.deepEqual(extract(renamed, 'file.sig'), await readFile(signature));
 
   await selectView('verify');
-  await file('verify-input', archive);
+  await file('verify-input', renamed);
   await id('verify-key').waitFor();
   await file('verify-key', key);
   await click('verify-local');
   await expectText('verify-status', 'OpenPGP：有效');
   assert.doesNotMatch(await id('verify-status').innerText(), /结合验签/);
-  for (const name of entries(archive)) assert.deepEqual(await readFile(await download('verify-status', name)), extract(archive, name));
+  for (const name of entries(renamed)) assert.deepEqual(await readFile(await download('verify-status', name)), extract(renamed, name));
   for (const armored of [true, false]) {
     const args = armored ? ['--armor'] : [];
     const secretFixture = gpg('--pinentry-mode', 'loopback', '--passphrase', '', ...args, '--export-secret-keys', 'fixture@example.invalid');
@@ -179,13 +178,31 @@ try {
   await file('verify-headers', fixture('header.json'));
   await click('verify-local');
   await expectText('verify-status', '与提供的本地区块记录相符 · 区块 358391');
+  await selectView('create');
+  await file('make-input', original);
+  await file('make-existing', fixture('hello-freetsa.tsr'));
+  await make();
+  const proofOnly = await download('make-status', 'hello-world.txt.asot');
+  const renamedProof = join(dir, 'my-receipts.asot');
+  await writeFile(renamedProof, await readFile(proofOnly));
+  await selectView('verify');
+  await file('verify-input', renamedProof);
+  await id('verify-original').waitFor();
+  assert.equal(await id('verify-original').getAttribute('required'), '');
+  await file('verify-original', { name: 'different-name.txt', mimeType: 'text/plain', buffer: await readFile(original) });
+  await click('verify-local');
+  await expectText('verify-status', 'file-freetsa.tsr（原文件）：有效');
+  await file('verify-original', { name: 'different-name.txt', mimeType: 'text/plain', buffer: Buffer.from('changed') });
+  await click('verify-local');
+  await expectText('verify-status', '时间戳与文件不匹配');
   assert.deepEqual(offlineRequests, []);
   page.off('request', collectOffline);
   console.log('PASS: three entries, two-stage creation, native tar, exact downloads, offline individual verification, and offline signature attachment');
 
   if (process.env.LIVE === '1') {
     await context.setOffline(false);
-    await file('verify-headers', []);
+    await file('verify-input', fixture('hello-world.txt.ots'));
+    await file('verify-target', original);
     await click('verify-online');
     await expectText('verify-status', '两个区块浏览器查询的记录相符 · 区块 358391');
     await selectView('create');
@@ -206,22 +223,22 @@ try {
     assert.match(status, /OpenTimestamps：已取得回执/);
     page.off('request', collectIssuance);
     const live = await download('make-status', 'hello-world.txt.asot');
-    assert.deepEqual(new Set(entries(live)), new Set(['hello-world.txt.sig', 'hello-world.txt.sig-digicert.tsr', 'hello-world.txt.sig-freetsa.tsr', 'hello-world.txt.sig.ots']));
+    assert.deepEqual(new Set(entries(live)), new Set(['file.sig', 'file.sig-digicert.tsr', 'file.sig-freetsa.tsr', 'file.sig.ots']));
     for (const authority of ['digicert', 'freetsa']) {
       const tsr = join(dir, `${authority}.tsr`);
-      await writeFile(tsr, extract(live, `hello-world.txt.sig-${authority}.tsr`));
+      await writeFile(tsr, extract(live, `file.sig-${authority}.tsr`));
       execFileSync('openssl', ['ts', '-verify', '-data', signature, '-in', tsr, '-CAfile', resolve(`public/roots/${authority}.pem`)]);
     }
     if (process.env.OTS_CLI === '1') {
       const ots = join(dir, 'test.sig.ots');
-      await writeFile(ots, extract(live, 'hello-world.txt.sig.ots'));
+      await writeFile(ots, extract(live, 'file.sig.ots'));
       const output = execFileSync('uvx', ['--from', 'opentimestamps-client', 'ots', 'info', ots], { encoding: 'utf8' });
       assert.match(output, /PendingAttestation|BlockHeaderAttestation/);
     }
     await selectView('verify');
     await file('verify-input', live);
     await click('verify-local');
-    await expectText('verify-status', 'hello-world.txt.sig-freetsa.tsr（签名文件）：有效');
+    await expectText('verify-status', 'file.sig-freetsa.tsr（签名文件）：有效');
     await file('verify-original', original);
     await id('verify-key').waitFor();
     await file('verify-key', key);
@@ -248,7 +265,7 @@ try {
     await expectText('complete-status', '已包含区块证明');
     await download('complete-status', 'incomplete.txt.fsot');
     assert.deepEqual(extract(pending, 'incomplete.txt'), await readFile(fixture('incomplete.txt')));
-    assert.notDeepEqual(extract(pending, 'incomplete.txt.ots'), await readFile(pendingReceipt));
+    assert.notDeepEqual(extract(pending, 'file.ots'), await readFile(pendingReceipt));
     await selectView('verify');
     await file('verify-input', pending);
     await click('verify-online');

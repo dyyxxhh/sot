@@ -50,7 +50,7 @@
         <div class="actions"><button id="make-confirm" type="submit" class="primary" hidden>确认制作</button></div>
       </form>
       <form id="verify" hidden autocomplete="off">
-        <label class="field">选择文件 <small>.asot、.fsot、.sig、.tsr 或 .ots</small><input id="verify-input" type="file" accept=".asot,.fsot,.tar,.sig,.asc,.tsr,.tsa,.ots"></label>
+        <label class="field">选择文件 <small>.asot、.fsot、.sig、.tsr 或 .ots</small><input id="verify-input" type="file" accept=".asot,.fsot,.sig,.asc,.tsr,.tsa,.ots"></label>
         <div id="verify-fields" class="fields" hidden>
           <label class="field" data-field="verify-target" hidden>打戳对象（必选） <small>选择当时被打戳的原文件或分离签名。</small><input id="verify-target" type="file"></label>
           <label class="field" data-field="verify-original" hidden>原文件 <small id="verify-original-note"></small><input id="verify-original" type="file"></label>
@@ -62,7 +62,7 @@
         <output id="verify-status" class="status" aria-live="polite" hidden></output>
       </form>
       <form id="complete" hidden autocomplete="off">
-        <label class="field">选择文件 <small>.ots、.asot 或 .fsot</small><input id="complete-input" type="file" accept=".ots,.asot,.fsot,.tar"></label>
+        <label class="field">选择文件 <small>.ots、.asot 或 .fsot</small><input id="complete-input" type="file" accept=".ots,.asot,.fsot"></label>
         <div id="complete-fields" class="fields" hidden>
           <div class="actions" id="complete-upgrade" hidden><button id="upgrade" class="primary" type="button">确认联网补全 OTS</button></div>
           <label class="field" data-field="complete-signature" hidden>附加分离签名 <small>可选；仅追加，不打戳、不验签。旧时间戳不覆盖新签名。</small><input id="complete-signature" type="file" accept=".sig,.asc,application/pgp-signature"></label>

@@ -1,4 +1,4 @@
-import { archiveKind, readBundle } from './bundle.mjs';
+import { archiveKind, readBundle, SIGNATURE_ENTRY } from './bundle.mjs';
 import { upgradeOts } from './ots.mjs';
 import { readDetached } from './pgp.mjs';
 import { packTar } from './tar.mjs';
@@ -188,10 +188,10 @@ async function updateVerify(event) {
   }
   if (rev !== verifyRevision) return;
   if (!kind && !type && !detached) return report('verify-status', ['请选择 .asot、.fsot、.sig、.tsr 或 .ots。']);
-  if (error) report('verify-status', [`无法读取归档：${errorText(error)}`, ...(kind === 'asot' ? ['归档改名时，可试着补选原文件。'] : [])]);
+  if (error) return report('verify-status', [`无法读取归档：${errorText(error)}`]);
   const needOriginal = detached || !!archive?.proofs.some(p => p.target === 'file');
   const hasOts = type === 'ots' || !!archive?.proofs.some(p => p.type === 'ots');
-  field('verify-original', detached || kind === 'asot' && (needOriginal || !!archive?.signature || !!error), needOriginal);
+  field('verify-original', detached || kind === 'asot' && (needOriginal || !!archive?.signature), needOriginal);
   el('verify-original-note').textContent = needOriginal ? '必选，用于验证原件。' : '可选，与公钥一起使用可验证签名。';
   field('verify-target', !!type, !!type);
   field('verify-key', detached || !!archive?.signature, detached);
@@ -199,8 +199,7 @@ async function updateVerify(event) {
   field('verify-headers', hasOts);
   show('verify-online', hasOts);
   el('verify-local').classList.toggle('primary', !hasOts);
-  el('verify-local').disabled = !!error;
-  verification = error ? undefined : { archive, main, type, detached };
+  verification = { archive, main, type, detached };
   show('verify-fields', true);
 }
 el('verify').addEventListener('change', event => {
@@ -256,7 +255,7 @@ el('complete-signature').addEventListener('change', () => {
   report('complete-status');
 });
 const otsNote = (name, complete) => `${name}：${complete ? '已包含区块证明，可继续验戳。' : '待确认或日历不可用；晚些再试。'}`;
-const archiveDownload = (data, entries) => [`${data.name}.${data.kind}`, packTar([...entries].map(([name, blob]) => ({ name, blob })))];
+const archiveDownload = (file, entries) => [file.name, packTar([...entries].map(([name, blob]) => ({ name, blob })))];
 el('upgrade').addEventListener('click', () => {
   if (!completion) return;
   const { main, data } = completion;
@@ -274,17 +273,17 @@ el('upgrade').addEventListener('click', () => {
         notes.push(otsNote(label, updated.complete));
       } catch (error) { notes.push(`${label}：未补全；${errorText(error)}`); }
     }
-    report('complete-status', notes, [archiveDownload(data, entries)]);
+    report('complete-status', notes, [archiveDownload(main, entries)]);
   });
 });
 el('attach').addEventListener('click', () => {
-  const data = completion?.data, signature = selected('complete-signature');
+  const { main, data } = completion ?? {}, signature = selected('complete-signature');
   if (!data || data.signature || !signature) return;
   void run('complete', 'complete-status', async () => {
     await readDetached(signature);
     const entries = new Map(data.entries);
-    entries.set(`${data.name}.sig`, signature);
-    report('complete-status', ['已追加签名（未验签）；已有时间戳不覆盖新签名。'], [archiveDownload(data, entries)]);
+    entries.set(SIGNATURE_ENTRY, signature);
+    report('complete-status', ['已追加签名（未验签）；已有时间戳不覆盖新签名。'], [archiveDownload(main, entries)]);
   });
 });
 

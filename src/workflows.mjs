@@ -1,4 +1,4 @@
-import { checkOriginal, makeBundle, proofEntryName } from './bundle.mjs';
+import { checkOriginal, makeBundle } from './bundle.mjs';
 import { hashBlob } from './hash.mjs';
 import { stampOts, verifyOts } from './ots.mjs';
 import { readDetached, verifyPgp } from './pgp.mjs';
@@ -62,9 +62,6 @@ export async function planMake({ original, signature, kind, target, authorities,
   }
   const fresh = authorities.filter(id => !proofs.some(p => p.target === target && formatOf(p) === id));
   checkName(`${name}.${kind}`);
-  if (signature) checkName(`${name}.sig`);
-  for (const proof of proofs) checkName(proofEntryName(name, proof));
-  for (const id of fresh) checkName(proofEntryName(name, { type: id === 'ots' ? 'ots' : 'tsr', authority: id, target }));
   const lines = [`输出：${name}.${kind}`];
   if (original) lines.push(`原文件：${original.name}${kind === 'asot' ? '（不包含在归档中）' : ''}`);
   if (signature) lines.push(`分离签名：${signature.name}（未验签）`);

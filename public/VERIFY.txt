@@ -1,38 +1,40 @@
 Sign of Time · 独立验证说明
 
 `.asot` 和 `.fsot` 是未压缩的 POSIX tar，并非新的密码学格式。
-.asot 只含凭证及可选分离签名，需另外提供原文件；.fsot 的第一项是原文件。
+.asot 只含凭证及可选分离签名；验原件或验签时需另外提供原件。
+.fsot 的第一项是原件；与凭证保留名冲突时，条目名会加 original- 前缀。
+外层归档和外部原件可改名；外层归档请保留 .asot 或 .fsot 后缀。
 本说明单独下载，不写入归档。
 
 把归档在单独目录中用 tar 解包。对来源不明的包，先用 tar -tf 检查：
 只应有普通文件，不能出现绝对路径、目录、链接或重复文件名。
 
-文件对应规则（以原文件 abc 为例）：
-  abc.ots / abc-digicert.tsr         -> abc
-  abc.sig.ots / abc.sig-digicert.tsr -> abc.sig
-  abc.sig                           -> abc 的二进制或装甲 OpenPGP 分离签名
-  其他机构如 FreeTSA 对应 abc-freetsa.tsr，规则相同。
+固定名称（以下命令用 abc 代表实际原件名）：
+  file.ots / file-digicert.tsr         -> 原件 abc
+  file.sig.ots / file.sig-digicert.tsr -> 签名 file.sig
+  file.sig                            -> abc 的二进制或装甲 OpenPGP 分离签名
+  其他机构如 FreeTSA 对应 file-freetsa.tsr，规则相同。
 
 OpenPGP：先在本地校对公钥指纹，再导入公钥、用 gpg 验签。
 签名应针对原始字节，例如 gpg --detach-sign abc；不要使用 --textmode。
-  gpg --verify abc.sig abc
-只给 abc 打戳不能证明后来加入的 abc.sig 当时存在。
-先验证签名对应 abc，再验证 abc.sig 的时间戳，才能证明签名当时已存在。
+  gpg --verify file.sig abc
+只给 abc 打戳不能证明后来加入的 file.sig 当时存在。
+先验证签名对应 abc，再验证 file.sig 的时间戳，才能证明签名当时已存在。
 
 RFC 3161：根证书必须从你信任的来源事先取得，不能仅信任包里附带的根。
 DigiCert 根证书：https://cacerts.digicert.com/DigiCertTrustedRootG4.crt.pem
-  openssl ts -verify -data abc -in abc-digicert.tsr -CAfile DigiCertTrustedRootG4.crt.pem
-  openssl ts -reply -in abc-digicert.tsr -text
+  openssl ts -verify -data abc -in file-digicert.tsr -CAfile DigiCertTrustedRootG4.crt.pem
+  openssl ts -reply -in file-digicert.tsr -text
 若使用 FreeTSA，信任根为 https://freetsa.org/files/cacert.pem；
 签发证书可从 https://freetsa.org/files/tsa.crt 取得；若回执缺证书，
 用 -untrusted tsa.crt 补充。验证其他机构也可能需要补充中间证书。
 长期保存时自行归档必要证书链、可信根来源和适用的撤销证据。
 
 OpenTimestamps：https://github.com/opentimestamps/opentimestamps-client
-任何持有 .ots 的人都可联网补全，不需要原作者或本站：ots upgrade abc.ots
+任何持有 .ots 的人都可联网补全，不需要原作者或本站：ots upgrade file.ots
 须等日历把承诺写入比特币，且至少一个相关日历还能提供完整证明；仅联网不保证能验证。
 补全会更新原 .ots 文件。保留更新后的 .ots，日后验证不再依赖日历。
-独立验证（需已同步到对应高度的 Bitcoin Core 节点）：ots verify abc.ots
+独立验证（需已同步到对应高度的 Bitcoin Core 节点）：ots verify -f abc file.ots
 手机网页也可以导入自行从可信本地节点取得的区块记录：
   HEIGHT=358391
   HASH=$(bitcoin-cli getblockhash "$HEIGHT")
