@@ -54,7 +54,7 @@ export function packTar(entries) {
     }
     parts.push(header(short, blob.size), blob, zeros(pad(blob.size)));
   }
-  return new Blob([...parts, zeros(2 * BLOCK)], { type: 'application/x-tar' });
+  return new Blob([...parts, zeros(2 * BLOCK)], { type: 'application/octet-stream' });
 }
 
 function field(bytes) {

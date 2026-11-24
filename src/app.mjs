@@ -1,175 +1,257 @@
-import { checkOriginal, makeBundle, readBundle } from './bundle.mjs';
-import { hashBlob } from './hash.mjs';
-import { stampOts, upgradeOts, verifyOts } from './ots.mjs';
-import { readDetached, verifyPgp } from './pgp.mjs';
-import { tsa } from './providers.mjs';
-import { requestTsa, verifyTsr } from './tsa.mjs';
-import { getTrust } from './trust.mjs';
+import { archiveKind, readBundle } from './bundle.mjs';
+import { upgradeOts } from './ots.mjs';
+import { readDetached } from './pgp.mjs';
+import { packTar } from './tar.mjs';
+import { errorText, executeMake, planMake, proofType, signatureName, verifyFiles } from './workflows.mjs';
 
 const el = id => document.getElementById(id);
 const selected = id => el(id).files[0];
-const text = error => error instanceof Error ? error.message : String(error);
-const urls = new WeakMap();
-const busyForms = new WeakSet();
-function report(out, lines, bundle) {
-  const oldUrl = urls.get(out);
-  if (oldUrl) URL.revokeObjectURL(oldUrl);
+const show = (id, visible) => { el(id).hidden = !visible; };
+const field = (id, visible, required = false) => {
+  el(id).closest('[data-field]').hidden = !visible;
+  el(id).disabled = !visible;
+  el(id).required = visible && required;
+};
+const views = { create: ['制作', 'make-input'], verify: ['验证', 'verify-input'], complete: ['补全', 'complete-input'] };
+for (const button of document.querySelectorAll('[data-view]')) button.addEventListener('click', () => {
+  const id = button.dataset.view;
+  const [title, input] = views[id];
+  for (const view of Object.keys(views)) show(view, view === id);
+  show('home', false);
+  show('tool', true);
+  el('tool-title').textContent = title;
+  el(input).focus();
+});
+el('back').addEventListener('click', () => {
+  const active = Object.keys(views).find(id => !el(id).hidden);
+  el(active).reset();
+  el(views[active][1]).dispatchEvent(new Event('change', { bubbles: true }));
+  show('tool', false);
+  show('home', true);
+  document.querySelector(`[data-view="${active}"]`).focus();
+});
+
+function report(id, lines = [], downloads = [], title) {
+  const out = el(id);
+  for (const link of out.querySelectorAll('a')) URL.revokeObjectURL(link.href);
   out.textContent = lines.join('\n');
-  if (bundle) {
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(bundle.blob);
-    urls.set(out, link.href);
-    link.download = bundle.filename;
-    link.textContent = `下载 ${bundle.filename}`;
-    out.append(document.createElement('br'), link);
+  out.hidden = !lines.length && !downloads.length;
+  if (!downloads.length) return;
+  if (title) {
+    const heading = document.createElement('p');
+    heading.textContent = title;
+    out.append(heading);
   }
+  const links = document.createElement('div');
+  links.className = 'downloads';
+  for (const [filename, blob] of downloads) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.textContent = `下载 ${filename}`;
+    links.append(link);
+  }
+  out.append(links);
 }
 async function run(form, out, job) {
-  if (busyForms.has(form)) return;
-  busyForms.add(form);
-  const buttons = [...form.querySelectorAll('button')];
-  buttons.forEach(button => { button.disabled = true; });
+  const controls = [...el(form).querySelectorAll('button, input'), el('back')].filter(node => !node.disabled);
+  if (el('back').disabled) return;
+  controls.forEach(node => { node.disabled = true; });
   report(out, ['处理中…']);
   try { await job(); }
-  catch (error) { report(out, [`无法完成：${text(error)}`]); }
-  finally { buttons.forEach(button => { button.disabled = false; }); busyForms.delete(form); }
+  catch (error) { report(out, [`无法完成：${errorText(error)}`]); }
+  finally { controls.forEach(node => { node.disabled = false; }); }
 }
-const create = el('create'), verify = el('verify');
-const makeResult = el('make-status'), verifyResult = el('verify-status');
-for (const button of document.querySelectorAll('[data-view]')) button.addEventListener('click', () => {
-  for (const peer of document.querySelectorAll('[data-view]')) peer.setAttribute('aria-pressed', String(peer === button));
-  create.hidden = button.dataset.view !== 'create'; verify.hidden = !create.hidden;
-});
-el('signature').addEventListener('change', () => {
-  const hasSignature = Boolean(selected('signature'));
-  el('target-sig').disabled = !hasSignature;
-  create.elements.target.value = hasSignature ? 'signature' : 'file';
-});
 
-async function imported(file, blob, digest, target) {
-  if (!file.size || file.size > 256 * 1024) throw new Error('凭证不得为空或大于 256 KiB。');
-  if (/\.ots$/i.test(file.name)) {
-    await verifyOts(file, blob, { digest });
-    return { type: 'ots', target, blob: file };
-  }
-  for (const id of Object.keys(tsa)) {
-    try {
-      await verifyTsr(file, blob, { ...getTrust(id), digest });
-      return { type: 'tsr', authority: id, target, blob: file };
-    } catch { /* distinguish supported authority by its certificate, not by filename */ }
-  }
-  throw new Error('与打戳对象不符，或签发机构不受支持。');
+const create = el('create');
+let approved;
+const makeMain = () => selected('make-input');
+const makeType = () => {
+  const name = makeMain()?.name ?? '';
+  return proofType(name) ?? (signatureName(name) ? 'signature' : 'file');
+};
+function makeFiles() {
+  const main = makeMain(), type = makeType();
+  return {
+    original: type === 'file' ? main : selected('make-original'),
+    signature: type === 'signature' ? main : selected('make-signature'),
+    existing: [...(type === 'ots' || type === 'tsr' ? [main] : []), ...el('make-existing').files],
+  };
 }
-function make(online) {
-  return run(create, makeResult, async () => {
-    const original = selected('original'), signature = selected('signature');
-    const target = create.elements.target.value, kind = create.elements.kind.value;
-    const targetBlob = target === 'signature' ? signature : original;
-    const authorities = online ? [...create.querySelectorAll('[name=authority]:checked')].map(input => input.value) : [];
-    const files = [...el('existing').files];
-    if (!original || !targetBlob) throw new Error('请先选择原文件及所需的签名。');
-    checkOriginal(kind, original);
-    if (!authorities.length && !files.length) throw new Error('请选择签发机构或导入已有凭证。');
-    if (signature) await readDetached(signature);
-    const digest = await hashBlob(targetBlob);
-    const proofs = [], messages = [];
-    const add = proof => {
-      if (proofs.some(p => p.type === proof.type && p.authority === proof.authority)) throw new Error('相同对象的此类凭证已选中。');
-      proofs.push(proof);
-    };
-    for (const file of files) {
-      try { add(await imported(file, targetBlob, digest, target)); messages.push(`${file.name}：已导入。`); }
-      catch (error) { messages.push(`${file.name}：${text(error)}`); }
-    }
-    const fresh = authorities.filter(id => !proofs.some(p => (p.authority ?? p.type) === id));
-    const replies = await Promise.allSettled(fresh.map(async id => id === 'ots'
-      ? { type: 'ots', target, blob: await stampOts(digest) }
-      : { type: 'tsr', authority: id, target, blob: await requestTsa(id, digest, targetBlob, getTrust(id)) }));
-    replies.forEach((reply, i) => {
-      const id = fresh[i], label = tsa[id]?.label ?? 'OpenTimestamps';
-      if (reply.status === 'fulfilled') {
-        add(reply.value);
-        messages.push(`${label}：${id === 'ots' ? '已取得回执；上链后可补全。' : '已签发并验证。'}`);
-      } else messages.push(`${label}：${text(reply.reason)}`);
-    });
-    report(makeResult, messages, proofs.length ? makeBundle({ name: original.name, kind, original, signature, proofs }) : undefined);
+function updateMake(event) {
+  if (event.target.id === 'make-input') {
+    for (const id of ['make-original', 'make-signature', 'make-existing']) el(id).value = '';
+    create.elements.kind.value = 'asot';
+    create.elements.target.value = 'signature';
+    for (const item of create.querySelectorAll('[name=authority]')) item.checked = false;
+  }
+  const main = makeMain(), type = makeType();
+  const { original, signature } = makeFiles();
+  const hasAuthorities = !!create.querySelector('[name=authority]:checked');
+  show('make-fields', !!main);
+  field('make-original', !!main && type !== 'file', create.elements.kind.value === 'fsot');
+  field('make-signature', !!main && type !== 'signature');
+  el('make-fsot').disabled = !original;
+  if (!original) create.elements.kind.value = 'asot';
+  show('make-targets', hasAuthorities && !!original && !!signature);
+  if (event.target.id === 'make-signature' && signature) create.elements.target.value = 'signature';
+  approved = undefined;
+  show('make-confirm', false);
+  show('make-review', true);
+  report('make-status');
+}
+create.addEventListener('change', updateMake);
+el('make-review').addEventListener('click', () => {
+  if (!create.reportValidity()) return;
+  const files = makeFiles();
+  const kind = create.elements.kind.value;
+  const target = files.signature ? (files.original ? create.elements.target.value : 'signature') : 'file';
+  const authorities = [...create.querySelectorAll('[name=authority]:checked')].map(item => item.value);
+  void run('create', 'make-status', async () => {
+    approved = await planMake({ ...files, kind, target, authorities });
+    report('make-status', approved.lines);
+    show('make-review', false);
+    show('make-confirm', true);
+    el('make-status').focus();
   });
-}
-create.addEventListener('submit', event => { event.preventDefault(); void make(true); });
-el('pack-only').addEventListener('click', () => void make(false));
+});
+create.addEventListener('submit', event => {
+  event.preventDefault();
+  if (!approved) return;
+  const plan = approved;
+  approved = undefined;
+  show('make-confirm', false);
+  show('make-review', true);
+  void run('create', 'make-status', async () => {
+    const { lines, bundle } = await executeMake(plan);
+    report('make-status', lines, bundle ? [[bundle.filename, bundle.blob]] : []);
+  });
+});
 
-async function archive() {
-  const file = selected('archive');
-  if (!file) throw new Error('请先选择归档。');
-  return readBundle(file, selected('external'));
-}
 async function localHeaders() {
-  const file = selected('headers');
-  if (!file) return [];
+  const file = selected('verify-headers');
+  if (!file || el('verify-headers').closest('[data-field]').hidden) return [];
   if (file.size > 1024 * 1024) throw new Error('区块记录文件过大。');
   const parsed = JSON.parse(await file.text());
   const list = Array.isArray(parsed) ? parsed : [parsed];
   if (list.some(h => !h || !Number.isSafeInteger(h.height) || h.height < 0 || typeof h.hash !== 'string' || typeof h.header !== 'string')) throw new Error('区块记录格式不正确。');
   return list;
 }
-function inspect(online) {
-  return run(verify, verifyResult, async () => {
-    const { original, signature, proofs } = await archive();
-    const headers = await localHeaders(), key = selected('public-key');
-    const messages = [];
-    let sigValid = false;
-    const signatureTimes = [];
-    if (signature) {
-      if (key && original) {
-        try { const fingerprint = await verifyPgp(original, signature, key); sigValid = true; messages.push(`OpenPGP：有效；公钥指纹 ${fingerprint}`); }
-        catch (error) { messages.push(`OpenPGP：验签失败；${text(error)}`); }
-      } else messages.push('OpenPGP：未验签，需要原文件和公钥。');
-    }
-    for (const proof of proofs) {
-      const target = proof.target === 'signature' ? signature : original;
-      const label = `${proof.label}（${proof.target === 'file' ? '原文件' : '签名文件'}）`;
-      if (!target) { messages.push(`${label}：缺少原文件，未验证。`); continue; }
-      try {
-        if (proof.type === 'tsr') {
-          const { time } = await verifyTsr(proof.blob, target, getTrust(proof.authority));
-          messages.push(`${label}：有效 · ${time}`);
-          if (proof.target === 'signature') signatureTimes.push(time);
-        } else {
-          const result = await verifyOts(proof.blob, target, { headers, online });
-          if (result.state === 'pending') messages.push(`${label}：匹配，但尚无比特币区块证明，请先联网补全。`);
-          else if (result.state === 'needs-headers') messages.push(`${label}：文件匹配，但未验证上链；缺少区块头（高度 ${result.heights.join('、')}）。`);
-          else {
-            messages.push(`${label}：与${result.via === 'local' ? '提供的本地区块记录' : '两个区块浏览器查询的记录'}相符 · 区块 ${result.height} · 区块标记时间 ${result.time}`);
-            if (sigValid && proof.target === 'signature') messages.push(`结合验签：这版文件的签名在区块 ${result.height} 上链时已存在。`);
-          }
-        }
-      } catch (error) { messages.push(`${label}：未通过；${text(error)}`); }
-    }
-    if (sigValid && signatureTimes.length) messages.push(`结合验签：这版文件最晚在 ${signatureTimes.sort()[0]} 已被该公钥对应的密钥签名。`);
-    report(verifyResult, messages);
+let verification, verifyRevision = 0;
+async function updateVerify(event) {
+  if (event.target.id === 'verify-input') {
+    for (const id of ['verify-target', 'verify-original', 'verify-key', 'verify-headers']) el(id).value = '';
+  }
+  const rev = ++verifyRevision;
+  const main = selected('verify-input'), original = selected('verify-original');
+  verification = undefined;
+  show('verify-fields', false);
+  report('verify-status');
+  if (!main) return;
+  const kind = archiveKind(main.name), type = proofType(main.name);
+  const detached = !kind && !type && signatureName(main.name);
+  let archive, error;
+  if (kind) {
+    try { archive = await readBundle(main, original); }
+    catch (reason) { error = reason; }
+  }
+  if (rev !== verifyRevision) return;
+  if (!kind && !type && !detached) return report('verify-status', ['请选择 .asot、.fsot、.sig、.tsr 或 .ots。']);
+  if (error) report('verify-status', [`无法读取归档：${errorText(error)}`, ...(kind === 'asot' ? ['归档改名时，可试着补选原文件。'] : [])]);
+  const needOriginal = detached || !!archive?.proofs.some(p => p.target === 'file');
+  const hasOts = type === 'ots' || !!archive?.proofs.some(p => p.type === 'ots');
+  field('verify-original', detached || kind === 'asot' && (needOriginal || !!archive?.signature || !!error), needOriginal);
+  el('verify-original-note').textContent = needOriginal ? '必选，用于验证原件。' : '可选，与公钥一起使用可验证签名。';
+  field('verify-target', !!type, !!type);
+  field('verify-key', detached || !!archive?.signature, detached);
+  el('verify-key-note').textContent = `${detached ? '必选' : '可选'}，不要导入私钥。`;
+  field('verify-headers', hasOts);
+  show('verify-online', hasOts);
+  el('verify-local').disabled = !!error;
+  verification = error ? undefined : { archive, main, type, detached };
+  show('verify-fields', true);
+}
+el('verify').addEventListener('change', event => {
+  if (['verify-input', 'verify-original'].includes(event.target.id)) void updateVerify(event);
+  else report('verify-status');
+});
+function verify(online) {
+  if (!verification || !el('verify').reportValidity()) return;
+  const { archive, main, type, detached } = verification;
+  const original = archive?.original ?? selected(detached ? 'verify-original' : 'verify-target');
+  const signature = archive?.signature ?? (detached ? main : undefined);
+  const proofs = archive?.proofs ?? (type ? [{ type, target: 'standalone', label: main.name, blob: main }] : []);
+  const publicKey = el('verify-key').disabled ? undefined : selected('verify-key');
+  void run('verify', 'verify-status', async () => {
+    const headers = await localHeaders();
+    const lines = await verifyFiles({ original, signature, proofs, publicKey, headers, online });
+    report('verify-status', lines, archive ? [...archive.entries] : [], '归档内文件（可单独下载；不代表已通过验证）');
   });
 }
-verify.addEventListener('submit', event => { event.preventDefault(); void inspect(false); });
-el('verify-online').addEventListener('click', () => void inspect(true));
-el('upgrade').addEventListener('click', () => void run(verify, verifyResult, async () => {
-  const data = await archive(), notes = [];
-  if (!data.proofs.some(p => p.type === 'ots')) throw new Error('归档没有 OTS 回执。');
-  for (const proof of data.proofs) if (proof.type === 'ots') {
-    const { blob, complete } = await upgradeOts(proof.blob);
-    proof.blob = blob;
-    notes.push(`${proof.label}：${complete ? '已包含区块证明，可继续验戳。' : '待确认或日历不可用；晚些再试。'}`);
+el('verify').addEventListener('submit', event => { event.preventDefault(); verify(false); });
+el('verify-online').addEventListener('click', () => verify(true));
+
+let completion, completeRevision = 0;
+el('complete-input').addEventListener('change', async () => {
+  const rev = ++completeRevision;
+  const main = selected('complete-input');
+  completion = undefined;
+  el('complete-signature').value = '';
+  show('complete-fields', false);
+  report('complete-status');
+  if (!main) return;
+  try {
+    const data = archiveKind(main.name) ? await readBundle(main) : undefined;
+    if (rev !== completeRevision) return;
+    if (!data && proofType(main.name) !== 'ots') throw new Error('请选择 .ots、.asot 或 .fsot。');
+    const hasOts = !data || data.proofs.some(p => p.type === 'ots');
+    const canAttach = !!data && !data.signature;
+    completion = { main, data };
+    show('complete-upgrade', hasOts);
+    field('complete-signature', canAttach);
+    show('complete-attach', canAttach);
+    el('attach').disabled = true;
+    show('complete-fields', hasOts || canAttach);
+    if (!hasOts && !canAttach) report('complete-status', ['归档没有 OTS 回执，且已包含签名。']);
+  } catch (error) {
+    if (rev === completeRevision) report('complete-status', [`无法读取归档：${errorText(error)}`]);
   }
-  report(verifyResult, notes, makeBundle(data));
-}));
-el('attach').addEventListener('click', () => el('attach-file').click());
-el('attach-file').addEventListener('change', () => {
-  const signature = selected('attach-file');
-  el('attach-file').value = '';
-  if (signature) void run(verify, verifyResult, async () => {
-    const data = await archive();
-    if (data.signature) throw new Error('归档已经含有 .sig，不自动替换已有签名。');
+});
+el('complete').addEventListener('submit', event => event.preventDefault());
+el('complete-signature').addEventListener('change', () => {
+  el('attach').disabled = !selected('complete-signature');
+  report('complete-status');
+});
+const otsNote = (name, complete) => `${name}：${complete ? '已包含区块证明，可继续验戳。' : '待确认或日历不可用；晚些再试。'}`;
+const archiveDownload = (data, entries) => [`${data.name}.${data.kind}`, packTar([...entries].map(([name, blob]) => ({ name, blob })))];
+el('upgrade').addEventListener('click', () => {
+  if (!completion) return;
+  const { main, data } = completion;
+  void run('complete', 'complete-status', async () => {
+    if (!data) {
+      const updated = await upgradeOts(main);
+      report('complete-status', [otsNote(main.name, updated.complete)], [[main.name, updated.blob]]);
+      return;
+    }
+    const entries = new Map(data.entries), notes = [];
+    for (const { label, blob } of data.proofs.filter(p => p.type === 'ots')) {
+      try {
+        const updated = await upgradeOts(blob);
+        entries.set(label, updated.blob);
+        notes.push(otsNote(label, updated.complete));
+      } catch (error) { notes.push(`${label}：未补全；${errorText(error)}`); }
+    }
+    report('complete-status', notes, [archiveDownload(data, entries)]);
+  });
+});
+el('attach').addEventListener('click', () => {
+  const data = completion?.data, signature = selected('complete-signature');
+  if (!data || data.signature || !signature) return;
+  void run('complete', 'complete-status', async () => {
     await readDetached(signature);
-    report(verifyResult, ['已附加签名；已有时间戳不会覆盖新附加的签名。'], makeBundle({ ...data, signature }));
+    const entries = new Map(data.entries);
+    entries.set(`${data.name}.sig`, signature);
+    report('complete-status', ['已追加签名（未验签）；已有时间戳不覆盖新签名。'], [archiveDownload(data, entries)]);
   });
 });
 
@@ -177,4 +259,4 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready).then(() => {
     el('offline-state').textContent = '离线工具已缓存';
   }).catch(() => { el('offline-state').textContent = '本浏览器未能缓存离线工具'; });
-} else el('offline-state').textContent = '开发模式不启用离线缓存';
+} else el('offline-state').textContent = '当前环境未启用离线缓存';

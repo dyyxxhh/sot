@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f4ec">
-  <meta name="description" content="在浏览器里为文件制作、打包和验证独立时间戳。原文件不上传。">
+  <meta name="description" content="在浏览器里制作、验证和补全文件时间戳。原文件不上传。">
   <title>Sign of Time · 文件时间戳</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="/app.webmanifest">
@@ -13,52 +13,62 @@
   <script type="module" src="/src/app.mjs"></script>
 </head>
 <body>
-  <header class="top"><a href="/" class="brand"><span aria-hidden="true">◷</span> SIGN OF TIME</a><a href="/VERIFY.txt" download>下载验证说明 ↗</a></header>
+  <header class="top"><a href="/" class="brand"><span aria-hidden="true">◷</span> SIGN OF TIME</a><a href="/VERIFY.txt" download>下载验证说明</a></header>
   <main>
-    <div class="hero">
-      <p class="kicker">独立验证 / 原件不上传</p>
-      <h1>给文件留个时间戳。</h1>
-      <p>证明这一版文件最晚何时已经存在。凭证是标准文件，解包后可用通用工具单独验证，不依赖本站。</p>
-    </div>
-    <section class="card" aria-label="文件时间戳工具">
-      <nav class="tabs" aria-label="工具模式">
-        <button type="button" data-view="create" aria-pressed="true">制作归档</button>
-        <button type="button" data-view="verify" aria-pressed="false">验证 / 补全</button>
+    <section id="home" aria-labelledby="home-title">
+      <div class="hero"><h1 id="home-title">文件时间戳</h1><p>证明这版文件最晚何时已存在。原件不上传，凭证可独立验证。</p></div>
+      <nav class="entries" aria-label="工具入口">
+        <button type="button" data-view="create">制作</button>
+        <button type="button" data-view="verify">验证</button>
+        <button type="button" data-view="complete">补全</button>
       </nav>
-      <form id="create" autocomplete="off">
-        <label class="field">原文件 <input id="original" type="file" required></label>
-        <label class="field">OpenPGP 分离签名 <small>可选，由本地签名工具生成</small> <input id="signature" type="file" accept=".sig,.asc,application/pgp-signature"></label>
-        <fieldset><legend>打戳对象</legend>
-          <label><input name="target" type="radio" value="file" checked> 原文件</label>
-          <label><input id="target-sig" name="target" type="radio" value="signature" disabled> 分离签名</label>
-          <small>给原文件打戳不会证明后来添加的签名当时已存在。</small>
-        </fieldset>
-        <fieldset><legend>获取时间戳 <small>需要联网</small></legend>
-          <label><input name="authority" type="checkbox" value="digicert" checked> DigiCert</label>
-          <label><input name="authority" type="checkbox" value="freetsa"> FreeTSA</label>
-          <label><input name="authority" type="checkbox" value="ots" checked> OpenTimestamps</label>
-        </fieldset>
-        <label class="field">已有凭证 <small>可选；.tsr 或 .ots，可多选</small> <input id="existing" type="file" accept=".ots,.tsr,.tsa" multiple></label>
-        <fieldset><legend>归档格式</legend>
-          <label><input name="kind" type="radio" value="asot" checked> .asot · 只装凭证</label>
-          <label><input name="kind" type="radio" value="fsot"> .fsot · 同时装原件</label>
-        </fieldset>
-        <div class="actions"><button id="make" class="primary" type="submit">申请并打包</button><button id="pack-only" type="button">仅打包已有凭证</button></div>
-        <output id="make-status" class="status" aria-live="polite"></output>
+    </section>
+    <section id="tool" class="card" hidden>
+      <div class="tool-head"><button id="back" type="button">← 返回</button><h1 id="tool-title"></h1></div>
+      <form id="create" hidden autocomplete="off">
+        <label class="field">选择文件 <small>原文件、分离签名或已有时间戳</small><input id="make-input" type="file"></label>
+        <div id="make-fields" class="fields" hidden>
+          <label class="field" data-field="make-original" hidden>补充原文件 <small>已有时间戳须匹配原文件或签名；.fsot 必须有原件。</small><input id="make-original" type="file"></label>
+          <label class="field" data-field="make-signature" hidden>分离签名 <small>由本地签名工具生成，不要选择私钥。</small><input id="make-signature" type="file" accept=".sig,.asc,application/pgp-signature"></label>
+          <label class="field">其他已有时间戳 <small>可选；可多选 .tsr 或 .ots。</small><input id="make-existing" type="file" accept=".tsr,.tsa,.ots" multiple></label>
+          <fieldset><legend>申请新时间戳 <small>可选，需联网</small></legend>
+            <label><input name="authority" type="checkbox" value="digicert"> DigiCert</label>
+            <label><input name="authority" type="checkbox" value="freetsa"> FreeTSA</label>
+            <label><input name="authority" type="checkbox" value="ots"> OpenTimestamps</label>
+          </fieldset>
+          <fieldset id="make-targets" hidden><legend>新时间戳打在</legend>
+            <label><input name="target" type="radio" value="file"> 原文件</label>
+            <label><input name="target" type="radio" value="signature" checked> 分离签名</label>
+          </fieldset>
+          <fieldset><legend>归档格式</legend>
+            <label><input name="kind" type="radio" value="asot" checked> .asot · 仅凭证和可选签名</label>
+            <label><input id="make-fsot" name="kind" type="radio" value="fsot" disabled> .fsot · 含原文件</label>
+          </fieldset>
+          <div class="actions"><button id="make-review" type="button" class="primary">核对制作内容</button></div>
+        </div>
+        <output id="make-status" class="status" aria-live="polite" tabindex="-1" hidden></output>
+        <div class="actions"><button id="make-confirm" type="submit" class="primary" hidden>确认制作</button></div>
       </form>
       <form id="verify" hidden autocomplete="off">
-        <label class="field">时间戳归档 <input id="archive" type="file" accept=".asot,.fsot" required></label>
-        <label class="field">原文件 <small>.asot 另选原件；.fsot 自带</small> <input id="external" type="file"></label>
-        <label class="field">OpenPGP 公钥 <small>可选，请勿导入私钥</small> <input id="public-key" type="file" accept=".asc,.pgp,.gpg,.pub"></label>
-        <label class="field">可信比特币区块记录 <small>可选，从你自己的节点取得；不要信任随归档附送的记录</small> <input id="headers" type="file" accept=".json"></label>
-        <div class="actions"><button class="primary" id="verify-local" type="submit">离线验证</button><button id="verify-online" type="button">联网查区块</button><button id="upgrade" type="button">联网补全 OTS</button><button id="attach" type="button">添加 .sig</button><input id="attach-file" type="file" accept=".sig,.asc,application/pgp-signature" hidden></div>
-        <output id="verify-status" class="status" aria-live="polite"></output>
+        <label class="field">选择文件 <small>.asot、.fsot、.sig、.tsr 或 .ots</small><input id="verify-input" type="file" accept=".asot,.fsot,.tar,.sig,.asc,.tsr,.tsa,.ots"></label>
+        <div id="verify-fields" class="fields" hidden>
+          <label class="field" data-field="verify-target" hidden>打戳对象（必选） <small>选择当时被打戳的原文件或分离签名。</small><input id="verify-target" type="file"></label>
+          <label class="field" data-field="verify-original" hidden>原文件 <small id="verify-original-note"></small><input id="verify-original" type="file"></label>
+          <label class="field" data-field="verify-key" hidden>OpenPGP 公钥 <small id="verify-key-note"></small><input id="verify-key" type="file" accept=".asc,.pgp,.gpg,.pub"></label>
+          <label class="field" data-field="verify-headers" hidden>可信比特币区块记录 <small>可选。请从你信任的节点取得。</small><input id="verify-headers" type="file" accept=".json"></label>
+          <div class="actions"><button id="verify-local" class="primary" type="submit">离线验证</button><button id="verify-online" type="button" hidden>验证（联网查区块）</button></div>
+        </div>
+        <output id="verify-status" class="status" aria-live="polite" hidden></output>
       </form>
-    </section>
-    <section class="notes" aria-label="验证说明">
-      <article><h2>文件不离开设备</h2><p>哈希、OpenPGP 验签和 tar 打包都在浏览器中完成。申请、补全时间戳和联网查区块时需要网络。</p></article>
-      <article><h2>比特币证明要等上链</h2><p>首次生成的 .ots 可能只是待确认回执。过几小时再打开归档补全，无需重新打戳。</p></article>
-      <article><h2>打戳与签名是两件事</h2><p>时间戳不证明作者身份。要证明某份签名何时已经存在，请选择给分离签名打戳。</p></article>
+      <form id="complete" hidden autocomplete="off">
+        <label class="field">选择文件 <small>.ots、.asot 或 .fsot</small><input id="complete-input" type="file" accept=".ots,.asot,.fsot,.tar"></label>
+        <div id="complete-fields" class="fields" hidden>
+          <div class="actions" id="complete-upgrade" hidden><button id="upgrade" class="primary" type="button">确认联网补全 OTS</button></div>
+          <label class="field" data-field="complete-signature" hidden>附加分离签名 <small>可选；仅追加，不打戳、不验签。旧时间戳不覆盖新签名。</small><input id="complete-signature" type="file" accept=".sig,.asc,application/pgp-signature"></label>
+          <div class="actions" id="complete-attach" hidden><button id="attach" type="button">确认追加签名</button></div>
+        </div>
+        <output id="complete-status" class="status" aria-live="polite" hidden></output>
+      </form>
     </section>
   </main>
   <footer><span>Sign of Time</span><span id="offline-state">离线缓存尚未就绪</span></footer>
