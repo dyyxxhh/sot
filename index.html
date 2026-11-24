@@ -32,9 +32,9 @@
           <label class="field" data-field="make-signature" hidden>分离签名 <small>由本地签名工具生成，不要选择私钥。</small><input id="make-signature" type="file" accept=".sig,.asc,application/pgp-signature"></label>
           <label class="field">其他已有时间戳 <small>可选；可多选 .tsr 或 .ots。</small><input id="make-existing" type="file" accept=".tsr,.tsa,.ots" multiple></label>
           <fieldset><legend>申请新时间戳 <small>可选，需联网</small></legend>
-            <label><input name="authority" type="checkbox" value="digicert"> DigiCert</label>
-            <label><input name="authority" type="checkbox" value="freetsa"> FreeTSA</label>
-            <label><input name="authority" type="checkbox" value="ots"> OpenTimestamps</label>
+            <label><input name="authority" type="checkbox" value="digicert" checked> DigiCert</label>
+            <label><input name="authority" type="checkbox" value="freetsa" checked> FreeTSA</label>
+            <label><input name="authority" type="checkbox" value="ots" checked> OpenTimestamps</label>
           </fieldset>
           <fieldset id="make-targets" hidden><legend>新时间戳打在</legend>
             <label><input name="target" type="radio" value="file"> 原文件</label>

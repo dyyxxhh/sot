@@ -47,6 +47,8 @@ try {
     return path;
   };
   const make = async () => { await click('make-review'); await click('make-confirm'); };
+  const authorities = ['DigiCert', 'FreeTSA', 'OpenTimestamps'].map(name => page.getByRole('checkbox', { name, exact: true }));
+  const skipIssuance = async () => { for (const provider of authorities) await provider.uncheck(); };
   await page.goto(url);
   assert.deepEqual(await page.locator('[data-view]').allTextContents(), ['制作', '验证', '补全']);
   assert.equal(await page.locator('input[type=file]:visible').count(), 0);
@@ -80,6 +82,8 @@ try {
 
   await selectView('create');
   await file('make-input', fixture('hello-freetsa.tsr'));
+  for (const provider of authorities) assert.equal(await provider.isChecked(), true);
+  await skipIssuance();
   await click('make-review');
   await expectText('make-status', '请补充原文件或分离签名');
   await file('make-original', fixture('incomplete.txt'));
@@ -95,6 +99,8 @@ try {
   const before = new Map(entries(archive).map(name => [name, extract(archive, name)]));
 
   await file('make-input', original);
+  for (const provider of authorities) assert.equal(await provider.isChecked(), true);
+  await skipIssuance();
   await file('make-existing', fixture('hello-freetsa.tsr'));
   await click('make-review');
   await expectText('make-status', '不联网，仅打包已有时间戳');
@@ -180,6 +186,7 @@ try {
   await expectText('verify-status', '与提供的本地区块记录相符 · 区块 358391');
   await selectView('create');
   await file('make-input', original);
+  await skipIssuance();
   await file('make-existing', fixture('hello-freetsa.tsr'));
   await make();
   const proofOnly = await download('make-status', 'hello-world.txt.asot');
@@ -208,7 +215,7 @@ try {
     await selectView('create');
     await file('make-input', signature);
     assert.equal(await id('make-fsot').isDisabled(), true);
-    for (const name of ['digicert', 'freetsa', 'ots']) await page.locator(`input[value=${name}]`).check();
+    for (const provider of authorities) assert.equal(await provider.isChecked(), true);
     const issued = [];
     const collectIssuance = request => { if (request.method() === 'POST') issued.push(request.url()); };
     page.on('request', collectIssuance);
@@ -255,6 +262,7 @@ try {
     assert.notDeepEqual(await readFile(upgradedReceipt), await readFile(pendingReceipt));
     await selectView('create');
     await file('make-input', pendingReceipt);
+    await skipIssuance();
     await file('make-original', fixture('incomplete.txt'));
     await page.locator('input[value=fsot]').check();
     await make();

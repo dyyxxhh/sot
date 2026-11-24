@@ -114,7 +114,7 @@ function updateMake(event) {
     for (const id of ['make-original', 'make-signature', 'make-existing']) el(id).value = '';
     create.elements.kind.value = 'asot';
     create.elements.target.value = 'signature';
-    for (const item of create.querySelectorAll('[name=authority]')) item.checked = false;
+    for (const item of create.querySelectorAll('[name=authority]')) item.checked = item.defaultChecked;
   }
   const main = makeMain(), type = makeType();
   const { original, signature } = makeFiles();
