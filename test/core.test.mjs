@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { makeBundle, readBundle } from '../src/bundle.mjs';
+import { hashBlob, hex } from '../src/hash.mjs';
+import { readCertificate, verifyTsr } from '../src/tsa.mjs';
+
+const fixture = name => readFile(new URL(`./fixtures/${name}`, import.meta.url));
+const root = async name => readCertificate(await readFile(new URL(`../public/roots/${name}.pem`, import.meta.url), 'utf8'));
+
+for (const [authority, file, receipt, time] of [
+  ['digicert', 'probe.sig', 'probe-digicert.tsr', '2026-11-23T22:29:38.000Z'],
+  ['freetsa', 'hello-world.txt', 'hello-freetsa.tsr', '2026-11-24T10:46:43.000Z'],
+]) test(`${authority}: accepts a real receipt and rejects a different file and root`, async () => {
+  const token = new Blob([await fixture(receipt)]), target = new Blob([await fixture(file)]);
+  const trust = { root: await root(authority), signer: authority === 'freetsa' ? await root('freetsa-signer') : undefined };
+  assert.equal((await verifyTsr(token, target, trust)).time, time);
+  await assert.rejects(verifyTsr(token, new Blob(['changed']), trust));
+  await assert.rejects(verifyTsr(token, target, { root: await root(authority === 'digicert' ? 'freetsa' : 'digicert') }));
+});
+
+test('SHA-256 matches the OpenTimestamps upstream file digest', async () => {
+  assert.equal(hex(await hashBlob(new Blob([await fixture('hello-world.txt')]))), '03ba204e50d126e4674c005e04d82e84c21366780af1f43bd54a37816b6ab340');
+});
+
+for (const kind of ['asot', 'fsot']) test(`${kind}: ordinary tar keeps exact Unicode paths, no extra entries, and original proof bytes`, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'sot-tar-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const name = '测试'.repeat(40) + ' = .txt';
+  const original = new File([await fixture('hello-world.txt')], name);
+  const signature = new Blob(['signature fixture']);
+  const proof = new Blob([await fixture('hello-world.txt.ots')]);
+  const { filename, blob } = makeBundle({ kind, name, original, signature, proofs: [{ type: 'ots', target: 'file', blob: proof }] });
+  const path = join(dir, 'bundle.tar');
+  await writeFile(path, new Uint8Array(await blob.arrayBuffer()));
+  const entries = [...(kind === 'fsot' ? [name] : []), `${name}.sig`, `${name}.ots`];
+  const tar = (...args) => execFileSync('tar', args, { env: { ...process.env, LC_ALL: 'C.UTF-8' } });
+  assert.deepEqual(tar('-tf', path).toString().trimEnd().split('\n'), entries);
+  assert.deepEqual(tar('-xOf', path, `${name}.ots`), await fixture('hello-world.txt.ots'));
+  const result = await readBundle(new File([blob], filename), kind === 'asot' ? original : undefined);
+  assert.equal(await result.original.text(), await original.text());
+  assert.equal(await result.signature.text(), 'signature fixture');
+  assert.equal(result.proofs[0].target, 'file');
+  await assert.rejects(readBundle(new File([blob.slice(0, -1024)], filename), original), /tar/);
+});

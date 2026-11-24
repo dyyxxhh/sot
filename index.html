@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4ec">
+  <meta name="description" content="在浏览器里为文件制作、打包和验证独立时间戳。原文件不上传。">
+  <title>Sign of Time · 文件时间戳</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/app.webmanifest">
+  <link rel="stylesheet" href="/src/style.css">
+  <script defer src="/vendor/opentimestamps.min.js"></script>
+  <script type="module" src="/src/app.mjs"></script>
+</head>
+<body>
+  <header class="top"><a href="/" class="brand"><span aria-hidden="true">◷</span> SIGN OF TIME</a><a href="/VERIFY.txt" download>下载验证说明 ↗</a></header>
+  <main>
+    <div class="hero">
+      <p class="kicker">独立验证 / 原件不上传</p>
+      <h1>给文件留个时间戳。</h1>
+      <p>证明这一版文件最晚何时已经存在。凭证是标准文件，解包后可用通用工具单独验证，不依赖本站。</p>
+    </div>
+    <section class="card" aria-label="文件时间戳工具">
+      <nav class="tabs" aria-label="工具模式">
+        <button type="button" data-view="create" aria-pressed="true">制作归档</button>
+        <button type="button" data-view="verify" aria-pressed="false">验证 / 补全</button>
+      </nav>
+      <form id="create" autocomplete="off">
+        <label class="field">原文件 <input id="original" type="file" required></label>
+        <label class="field">OpenPGP 分离签名 <small>可选，由本地签名工具生成</small> <input id="signature" type="file" accept=".sig,.asc,application/pgp-signature"></label>
+        <fieldset><legend>打戳对象</legend>
+          <label><input name="target" type="radio" value="file" checked> 原文件</label>
+          <label><input id="target-sig" name="target" type="radio" value="signature" disabled> 分离签名</label>
+          <small>给原文件打戳不会证明后来添加的签名当时已存在。</small>
+        </fieldset>
+        <fieldset><legend>获取时间戳 <small>需要联网</small></legend>
+          <label><input name="authority" type="checkbox" value="digicert" checked> DigiCert</label>
+          <label><input name="authority" type="checkbox" value="freetsa"> FreeTSA</label>
+          <label><input name="authority" type="checkbox" value="ots" checked> OpenTimestamps</label>
+        </fieldset>
+        <label class="field">已有凭证 <small>可选；.tsr 或 .ots，可多选</small> <input id="existing" type="file" accept=".ots,.tsr,.tsa" multiple></label>
+        <fieldset><legend>归档格式</legend>
+          <label><input name="kind" type="radio" value="asot" checked> .asot · 只装凭证</label>
+          <label><input name="kind" type="radio" value="fsot"> .fsot · 同时装原件</label>
+        </fieldset>
+        <div class="actions"><button id="make" class="primary" type="submit">申请并打包</button><button id="pack-only" type="button">仅打包已有凭证</button></div>
+        <output id="make-status" class="status" aria-live="polite"></output>
+      </form>
+      <form id="verify" hidden autocomplete="off">
+        <label class="field">时间戳归档 <input id="archive" type="file" accept=".asot,.fsot" required></label>
+        <label class="field">原文件 <small>.asot 另选原件；.fsot 自带</small> <input id="external" type="file"></label>
+        <label class="field">OpenPGP 公钥 <small>可选，请勿导入私钥</small> <input id="public-key" type="file" accept=".asc,.pgp,.gpg,.pub"></label>
+        <label class="field">可信比特币区块记录 <small>可选，从你自己的节点取得；不要信任随归档附送的记录</small> <input id="headers" type="file" accept=".json"></label>
+        <div class="actions"><button class="primary" id="verify-local" type="submit">离线验证</button><button id="verify-online" type="button">联网查区块</button><button id="upgrade" type="button">联网补全 OTS</button><button id="attach" type="button">添加 .sig</button><input id="attach-file" type="file" accept=".sig,.asc,application/pgp-signature" hidden></div>
+        <output id="verify-status" class="status" aria-live="polite"></output>
+      </form>
+    </section>
+    <section class="notes" aria-label="验证说明">
+      <article><h2>文件不离开设备</h2><p>哈希、OpenPGP 验签和 tar 打包都在浏览器中完成。申请、补全时间戳和联网查区块时需要网络。</p></article>
+      <article><h2>比特币证明要等上链</h2><p>首次生成的 .ots 可能只是待确认回执。过几小时再打开归档补全，无需重新打戳。</p></article>
+      <article><h2>打戳与签名是两件事</h2><p>时间戳不证明作者身份。要证明某份签名何时已经存在，请选择给分离签名打戳。</p></article>
+    </section>
+  </main>
+  <footer><span>Sign of Time</span><span id="offline-state">离线缓存尚未就绪</span></footer>
+</body>
+</html>
