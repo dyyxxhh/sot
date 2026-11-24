@@ -2,6 +2,7 @@ import { archiveKind, readBundle } from './bundle.mjs';
 import { upgradeOts } from './ots.mjs';
 import { readDetached } from './pgp.mjs';
 import { packTar } from './tar.mjs';
+import { formatUtcTime } from './verification-result.mjs';
 import { errorText, executeMake, planMake, proofType, signatureName, verifyFiles } from './workflows.mjs';
 
 const el = id => document.getElementById(id);
@@ -33,6 +34,7 @@ el('back').addEventListener('click', () => {
 
 function report(id, lines = [], downloads = [], title) {
   const out = el(id);
+  if (id === 'verify-status') showVerifySummary();
   for (const link of out.querySelectorAll('a')) URL.revokeObjectURL(link.href);
   out.textContent = lines.join('\n');
   out.hidden = !lines.length && !downloads.length;
@@ -53,6 +55,31 @@ function report(id, lines = [], downloads = [], title) {
   }
   out.append(links);
 }
+
+function showVerifySummary(summary) {
+  const box = el('verify-summary');
+  box.replaceChildren();
+  box.hidden = !summary;
+  if (!summary) return;
+  box.dataset.result = summary.pass ? 'pass' : 'fail';
+  const heading = document.createElement('h2');
+  heading.textContent = summary.pass ? '联合校验通过' : '联合校验未通过';
+  box.append(heading);
+  if (summary.time) {
+    const label = document.createElement('small');
+    label.textContent = summary.timeType === 'tsr' ? '最早已验证 TSR · UTC' : 'OTS 区块标记时间 · UTC';
+    const time = document.createElement('time');
+    time.dateTime = summary.time;
+    time.textContent = formatUtcTime(summary.time);
+    box.append(label, time);
+  }
+  const reason = document.createElement('p');
+  reason.textContent = summary.reason;
+  const rule = document.createElement('small');
+  rule.textContent = '判定规则：TSR 时间跨度 ≤ 5 秒；同一对象的 OTS 区块标记时间与 TSR 签发时间相差 ≤ 24 小时。';
+  box.append(reason, rule);
+}
+
 async function run(form, out, job) {
   const controls = [...el(form).querySelectorAll('button, input'), el('back')].filter(node => !node.disabled);
   if (el('back').disabled) return;
@@ -167,6 +194,7 @@ async function updateVerify(event) {
   el('verify-key-note').textContent = `${detached ? '必选' : '可选'}，不要导入私钥。`;
   field('verify-headers', hasOts);
   show('verify-online', hasOts);
+  el('verify-local').classList.toggle('primary', !hasOts);
   el('verify-local').disabled = !!error;
   verification = error ? undefined : { archive, main, type, detached };
   show('verify-fields', true);
@@ -184,8 +212,9 @@ function verify(online) {
   const publicKey = el('verify-key').disabled ? undefined : selected('verify-key');
   void run('verify', 'verify-status', async () => {
     const headers = await localHeaders();
-    const lines = await verifyFiles({ original, signature, proofs, publicKey, headers, online });
+    const { lines, summary } = await verifyFiles({ original, signature, proofs, publicKey, headers, online });
     report('verify-status', lines, archive ? [...archive.entries] : [], '归档内文件（可单独下载；不代表已通过验证）');
+    showVerifySummary(summary);
   });
 }
 el('verify').addEventListener('submit', event => { event.preventDefault(); verify(false); });

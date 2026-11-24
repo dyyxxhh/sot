@@ -6,6 +6,7 @@ import { tsa } from './providers.mjs';
 import { checkName } from './tar.mjs';
 import { requestTsa, verifyTsr } from './tsa.mjs';
 import { getTrust } from './trust.mjs';
+import { formatUtcTime, summarizeTimestamps } from './verification-result.mjs';
 
 export const errorText = error => error instanceof Error ? error.message : String(error);
 export const proofType = name => /\.ots$/i.test(name) ? 'ots' : /\.(tsr|tsa)$/i.test(name) ? 'tsr' : undefined;
@@ -94,18 +95,20 @@ export async function executeMake(plan) {
 }
 
 export async function verifyFiles({ original, signature, proofs, publicKey, headers, online }) {
-  const lines = [], signatureTimes = [];
-  let sigValid = false;
+  const lines = [], signatureTimes = [], checks = [];
+  let sigValid = false, signatureFailed = false;
   if (signature) {
     if (publicKey && original) {
       try {
         const fingerprint = await verifyPgp(original, signature, publicKey);
         sigValid = true;
         lines.push(`OpenPGP：有效；公钥指纹 ${fingerprint}`);
-      } catch (error) { lines.push(`OpenPGP：验签失败；${errorText(error)}`); }
+      } catch (error) { signatureFailed = true; lines.push(`OpenPGP：验签失败；${errorText(error)}`); }
     } else lines.push('OpenPGP：未验签，需要原文件和公钥。');
   }
   for (const proof of proofs) {
+    const check = { type: proof.type, target: proof.target };
+    checks.push(check);
     const target = proof.target === 'signature' ? signature : original;
     const label = `${proof.label}（${proof.target === 'standalone' ? '打戳对象' : targetName(proof.target)}）`;
     if (!target) { lines.push(`${label}：缺少原文件，未验证。`); continue; }
@@ -114,19 +117,21 @@ export async function verifyFiles({ original, signature, proofs, publicKey, head
         const { time, authority = proof.authority } = proof.authority
           ? await verifyTsr(proof.blob, target, getTrust(proof.authority))
           : await verifySupportedTsr(proof.blob, target);
-        lines.push(`${label}：有效 · ${time} · ${providerName(authority)}`);
+        check.time = time;
+        lines.push(`${label}：有效 · ${formatUtcTime(time)} UTC · ${providerName(authority)}`);
         if (proof.target === 'signature') signatureTimes.push(time);
       } else {
         const result = await verifyOts(proof.blob, target, { headers, online });
         if (result.state === 'pending') lines.push(`${label}：匹配，但尚无比特币区块证明，请先联网补全。`);
         else if (result.state === 'needs-headers') lines.push(`${label}：文件匹配，但未验证上链；缺少区块头（高度 ${result.heights.join('、')}）。`);
         else {
-          lines.push(`${label}：与${result.via === 'local' ? '提供的本地区块记录' : '两个区块浏览器查询的记录'}相符 · 区块 ${result.height} · 区块标记时间 ${result.time}`);
+          check.time = result.time;
+          lines.push(`${label}：与${result.via === 'local' ? '提供的本地区块记录' : '两个区块浏览器查询的记录'}相符 · 区块 ${result.height} · 区块标记时间 ${formatUtcTime(result.time)} UTC`);
           if (sigValid && proof.target === 'signature') lines.push(`结合验签：这版文件的签名在区块 ${result.height} 上链时已存在。`);
         }
       }
     } catch (error) { lines.push(`${label}：未通过；${errorText(error)}`); }
   }
-  if (sigValid && signatureTimes.length) lines.push(`结合验签：这版文件最晚在 ${signatureTimes.sort()[0]} 已被该公钥对应的密钥签名。`);
-  return lines;
+  if (sigValid && signatureTimes.length) lines.push(`结合验签：这版文件最晚在 ${formatUtcTime(signatureTimes.sort()[0])} UTC 已被该公钥对应的密钥签名。`);
+  return { lines, summary: summarizeTimestamps(checks, { signatureFailed }) };
 }

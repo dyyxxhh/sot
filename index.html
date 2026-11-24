@@ -56,8 +56,9 @@
           <label class="field" data-field="verify-original" hidden>原文件 <small id="verify-original-note"></small><input id="verify-original" type="file"></label>
           <label class="field" data-field="verify-key" hidden>OpenPGP 公钥 <small id="verify-key-note"></small><input id="verify-key" type="file" accept=".asc,.pgp,.gpg,.pub"></label>
           <label class="field" data-field="verify-headers" hidden>可信比特币区块记录 <small>可选。请从你信任的节点取得。</small><input id="verify-headers" type="file" accept=".json"></label>
-          <div class="actions"><button id="verify-local" class="primary" type="submit">离线验证</button><button id="verify-online" type="button" hidden>验证（联网查区块）</button></div>
+          <div class="actions"><button id="verify-online" class="primary" type="button" hidden>在线验证</button><button id="verify-local" type="submit">离线验证</button></div>
         </div>
+        <section id="verify-summary" class="verification-summary" aria-live="polite" aria-atomic="true" hidden></section>
         <output id="verify-status" class="status" aria-live="polite" hidden></output>
       </form>
       <form id="complete" hidden autocomplete="off">

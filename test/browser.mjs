@@ -97,12 +97,20 @@ try {
 
   await selectView('verify');
   await file('verify-input', archive);
+  await id('verify-online').waitFor();
+  assert.deepEqual(await page.locator('#verify .actions button:visible').allTextContents(), ['在线验证', '离线验证']);
+  assert.notEqual(await id('verify-online').evaluate(b => getComputedStyle(b).backgroundColor), await id('verify-local').evaluate(b => getComputedStyle(b).backgroundColor));
   await click('verify-local');
   await expectText('verify-status', '缺少区块头');
   await expectText('verify-status', 'hello-world.txt-freetsa.tsr（原文件）：有效');
   await file('verify-headers', fixture('header.json'));
   await click('verify-local');
   await expectText('verify-status', '与提供的本地区块记录相符 · 区块 358391');
+
+  await expectText('verify-summary', '联合校验未通过');
+  await expectText('verify-summary', '2026.11.24 10:46.43');
+  await expectText('verify-summary', '24 小时');
+  assert.equal(await id('verify-summary').getAttribute('data-result'), 'fail');
 
   await selectView('complete');
   // A legacy extra .tar suffix is accepted but never emitted.
