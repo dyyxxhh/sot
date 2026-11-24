@@ -59,6 +59,12 @@ try {
     if (navigator.serviceWorker.controller) resolve();
     else navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
   }));
+  await click('open-settings');
+  assert.equal(await id('display-time-zone').inputValue(), 'UTC');
+  const [guide] = await Promise.all([page.waitForEvent('download'), id('settings').getByRole('link', { name: '下载验证说明' }).click()]);
+  assert.equal(guide.suggestedFilename(), 'VERIFY.txt');
+  assert.equal(await guide.failure(), null);
+  await id('settings').getByRole('button', { name: '完成' }).click();
   gpg('--pinentry-mode', 'loopback', '--passphrase', '', '--quick-generate-key', 'SOT Browser Fixture <fixture@example.invalid>', 'ed25519', 'sign', '1d');
   const key = join(dir, 'public.asc'), signature = join(dir, 'hello-world.txt.sig');
   await writeFile(key, gpg('--armor', '--export', 'fixture@example.invalid'));
@@ -110,6 +116,23 @@ try {
   await expectText('verify-summary', '联合校验未通过');
   await expectText('verify-summary', '2026.11.24 10:46.43');
   await expectText('verify-summary', '24 小时');
+  await expectText('verify-summary', '300 秒');
+  assert.equal(await id('verify-summary').getAttribute('data-result'), 'fail');
+  const proofClocks = id('verify-status').locator('time');
+  assert.equal(await proofClocks.count(), 2);
+  for (const time of await proofClocks.all()) {
+    const style = await time.evaluate(el => [getComputedStyle(el).color, Number(getComputedStyle(el).fontWeight)]);
+    assert.equal(style[0], 'rgb(23, 69, 43)');
+    assert.ok(style[1] >= 700);
+  }
+  const instants = await proofClocks.evaluateAll(times => times.map(time => time.dateTime));
+  await click('open-settings');
+  await id('display-time-zone').selectOption('Asia/Shanghai');
+  await id('settings').getByRole('button', { name: '完成' }).click();
+  await expectText('verify-summary', '2026.11.24 18:46.43');
+  await expectText('verify-summary', 'Asia/Shanghai');
+  await expectText('verify-status', '2026.11.24 18:46.43');
+  assert.deepEqual(await proofClocks.evaluateAll(times => times.map(time => time.dateTime)), instants);
   assert.equal(await id('verify-summary').getAttribute('data-result'), 'fail');
 
   await selectView('complete');
@@ -231,6 +254,9 @@ try {
     await expectText('verify-status', '两个区块浏览器查询的记录相符 · 区块 428648');
     console.log('PASS: live DigiCert, FreeTSA and OTS with signature only; native OpenSSL; upgrade of standalone and archived OTS');
   }
+  await page.reload();
+  await click('open-settings');
+  assert.equal(await id('display-time-zone').inputValue(), 'Asia/Shanghai');
   assert.deepEqual(errors, []);
 } catch (error) {
   for (const context of browser?.contexts() ?? []) for (const page of context.pages()) {

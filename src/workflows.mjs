@@ -6,7 +6,7 @@ import { tsa } from './providers.mjs';
 import { checkName } from './tar.mjs';
 import { requestTsa, verifyTsr } from './tsa.mjs';
 import { getTrust } from './trust.mjs';
-import { formatUtcTime, summarizeTimestamps } from './verification-result.mjs';
+import { summarizeTimestamps } from './verification-result.mjs';
 
 export const errorText = error => error instanceof Error ? error.message : String(error);
 export const proofType = name => /\.ots$/i.test(name) ? 'ots' : /\.(tsr|tsa)$/i.test(name) ? 'tsr' : undefined;
@@ -118,7 +118,7 @@ export async function verifyFiles({ original, signature, proofs, publicKey, head
           ? await verifyTsr(proof.blob, target, getTrust(proof.authority))
           : await verifySupportedTsr(proof.blob, target);
         check.time = time;
-        lines.push(`${label}：有效 · ${formatUtcTime(time)} UTC · ${providerName(authority)}`);
+        lines.push({ prefix: `${label}：有效 · `, time, suffix: ` · ${providerName(authority)}`, verified: true });
         if (proof.target === 'signature') signatureTimes.push(time);
       } else {
         const result = await verifyOts(proof.blob, target, { headers, online });
@@ -126,12 +126,12 @@ export async function verifyFiles({ original, signature, proofs, publicKey, head
         else if (result.state === 'needs-headers') lines.push(`${label}：文件匹配，但未验证上链；缺少区块头（高度 ${result.heights.join('、')}）。`);
         else {
           check.time = result.time;
-          lines.push(`${label}：与${result.via === 'local' ? '提供的本地区块记录' : '两个区块浏览器查询的记录'}相符 · 区块 ${result.height} · 区块标记时间 ${formatUtcTime(result.time)} UTC`);
+          lines.push({ prefix: `${label}：与${result.via === 'local' ? '提供的本地区块记录' : '两个区块浏览器查询的记录'}相符 · 区块 ${result.height} · 区块标记时间 `, time: result.time, verified: true });
           if (sigValid && proof.target === 'signature') lines.push(`结合验签：这版文件的签名在区块 ${result.height} 上链时已存在。`);
         }
       }
     } catch (error) { lines.push(`${label}：未通过；${errorText(error)}`); }
   }
-  if (sigValid && signatureTimes.length) lines.push(`结合验签：这版文件最晚在 ${formatUtcTime(signatureTimes.sort()[0])} UTC 已被该公钥对应的密钥签名。`);
+  if (sigValid && signatureTimes.length) lines.push({ prefix: '结合验签：这版文件最晚在 ', time: signatureTimes.sort()[0], suffix: ' 已被该公钥对应的密钥签名。' });
   return { lines, summary: summarizeTimestamps(checks, { signatureFailed }) };
 }

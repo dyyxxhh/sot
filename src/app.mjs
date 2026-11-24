@@ -2,10 +2,12 @@ import { archiveKind, readBundle } from './bundle.mjs';
 import { upgradeOts } from './ots.mjs';
 import { readDetached } from './pgp.mjs';
 import { packTar } from './tar.mjs';
-import { formatUtcTime } from './verification-result.mjs';
+import { setupDisplayTime } from './time-display.mjs';
+import { OTS_DRIFT_HOURS, TSR_SPREAD_SECONDS } from './verification-result.mjs';
 import { errorText, executeMake, planMake, proofType, signatureName, verifyFiles } from './workflows.mjs';
 
 const el = id => document.getElementById(id);
+const displayTime = setupDisplayTime(el('settings'), el('display-time-zone'), el('open-settings'));
 const selected = id => el(id).files[0];
 const show = (id, visible) => { el(id).hidden = !visible; };
 const field = (id, visible, required = false) => {
@@ -36,7 +38,12 @@ function report(id, lines = [], downloads = [], title) {
   const out = el(id);
   if (id === 'verify-status') showVerifySummary();
   for (const link of out.querySelectorAll('a')) URL.revokeObjectURL(link.href);
-  out.textContent = lines.join('\n');
+  out.replaceChildren();
+  for (const [index, line] of lines.entries()) {
+    if (index) out.append('\n');
+    if (typeof line === 'string') out.append(line);
+    else out.append(line.prefix, displayTime.clock(line.time, line.verified), ' ', displayTime.zoneLabel(), line.suffix ?? '');
+  }
   out.hidden = !lines.length && !downloads.length;
   if (!downloads.length) return;
   if (title) {
@@ -67,16 +74,13 @@ function showVerifySummary(summary) {
   box.append(heading);
   if (summary.time) {
     const label = document.createElement('small');
-    label.textContent = summary.timeType === 'tsr' ? '最早已验证 TSR · UTC' : 'OTS 区块标记时间 · UTC';
-    const time = document.createElement('time');
-    time.dateTime = summary.time;
-    time.textContent = formatUtcTime(summary.time);
-    box.append(label, time);
+    label.append(summary.timeType === 'tsr' ? '最早已验证 TSR · ' : 'OTS 区块标记时间 · ', displayTime.zoneLabel());
+    box.append(label, displayTime.clock(summary.time));
   }
   const reason = document.createElement('p');
   reason.textContent = summary.reason;
   const rule = document.createElement('small');
-  rule.textContent = '判定规则：TSR 时间跨度 ≤ 5 秒；同一对象的 OTS 区块标记时间与 TSR 签发时间相差 ≤ 24 小时。';
+  rule.textContent = `判定规则：TSR 时间跨度 ≤ ${TSR_SPREAD_SECONDS} 秒；同一对象的 OTS 区块标记时间与 TSR 签发时间相差 ≤ ${OTS_DRIFT_HOURS} 小时。`;
   box.append(reason, rule);
 }
 

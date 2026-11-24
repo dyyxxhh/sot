@@ -13,7 +13,7 @@
   <script type="module" src="/src/app.mjs"></script>
 </head>
 <body>
-  <header class="top"><a href="/" class="brand"><span aria-hidden="true">◷</span> SIGN OF TIME</a><a href="/VERIFY.txt" download>下载验证说明</a></header>
+  <header class="top"><a href="/" class="brand"><span aria-hidden="true">◷</span> SIGN OF TIME</a><button id="open-settings" type="button" aria-haspopup="dialog">设置</button></header>
   <main>
     <section id="home" aria-labelledby="home-title">
       <div class="hero"><h1 id="home-title">文件时间戳</h1><p>证明这版文件最晚何时已存在。原件不上传，凭证可独立验证。</p></div>
@@ -73,5 +73,19 @@
     </section>
   </main>
   <footer><span>Sign of Time</span><span id="offline-state">离线缓存尚未就绪</span></footer>
+  <dialog id="settings" class="settings" aria-labelledby="settings-title">
+    <form method="dialog">
+      <h2 id="settings-title">设置</h2>
+      <label class="field">显示时区
+        <select id="display-time-zone">
+          <option value="UTC">UTC</option>
+          <option value="device">跟随设备</option>
+          <option value="Asia/Shanghai">北京时间（Asia/Shanghai）</option>
+        </select>
+        <small>自动保存在本浏览器，仅影响时间显示，不影响验证或时间差判定。</small>
+      </label>
+      <div class="settings-actions"><a href="/VERIFY.txt" download>下载验证说明</a><button type="submit" class="primary">完成</button></div>
+    </form>
+  </dialog>
 </body>
 </html>
