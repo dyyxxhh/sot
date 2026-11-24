@@ -118,11 +118,12 @@ try {
   await expectText('verify-summary', '24 小时');
   await expectText('verify-summary', '300 秒');
   assert.equal(await id('verify-summary').getAttribute('data-result'), 'fail');
+  assert.equal(await id('verify-summary').locator('time').evaluate(el => getComputedStyle(el).color), 'rgb(146, 36, 36)');
   const proofClocks = id('verify-status').locator('time');
   assert.equal(await proofClocks.count(), 2);
   for (const time of await proofClocks.all()) {
     const style = await time.evaluate(el => [getComputedStyle(el).color, Number(getComputedStyle(el).fontWeight)]);
-    assert.equal(style[0], 'rgb(23, 69, 43)');
+    assert.equal(style[0], 'rgb(71, 129, 79)');
     assert.ok(style[1] >= 700);
   }
   const instants = await proofClocks.evaluateAll(times => times.map(time => time.dateTime));
