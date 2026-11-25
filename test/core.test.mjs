@@ -69,6 +69,27 @@ test('reserves proof names even when an archive does not yet include those proof
   assert.equal(data.signature, undefined);
 });
 
+test('maps fixed archive proof names to the original filename for individual downloads', async () => {
+  const original = new File(['document'], '人是.pdf');
+  const signature = new Blob(['signature']);
+  const receipt = new Blob([await fixture('hello-freetsa.tsr')]);
+  const { blob } = makeBundle({
+    kind: 'fsot', name: original.name, original, signature,
+    proofs: [
+      { type: 'tsr', target: 'file', authority: 'digicert', blob: receipt },
+      { type: 'tsr', target: 'file', authority: 'freetsa', blob: receipt },
+      { type: 'ots', target: 'file', blob: receipt },
+      { type: 'tsr', target: 'signature', authority: 'digicert', blob: receipt },
+      { type: 'ots', target: 'signature', blob: receipt },
+    ],
+  });
+  const data = await readBundle(new File([blob], 'renamed.fsot'));
+  assert.deepEqual(data.downloads.map(([name]) => name), [
+    '人是.pdf', '人是.pdf.sig', '人是.pdf-digicert.tsr', '人是.pdf-freetsa.tsr',
+    '人是.pdf.ots', '人是.pdf.sig-digicert.tsr', '人是.pdf.sig.ots',
+  ]);
+});
+
 test('requires fixed entry names and rejects a signature proof without its signature', async () => {
   const blob = new Blob([await fixture('hello-world.txt.ots')]);
   for (const name of ['old.ots', 'file.sig.ots']) {

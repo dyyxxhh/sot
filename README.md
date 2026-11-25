@@ -25,7 +25,7 @@ OTS 刚签发时通常只有待确认回执。任何持有该 `.ots` 的人都�
 
 - 顶层普通文件，POSIX ustar；非 ASCII 或较长文件名用 PAX `path`；不接受路径、链接、重复条目。
 - `.fsot` 的第一个普通文件是原件，单个原件须小于 8 GiB；更大的原件用 `.asot`。原件保留原名，与保留名冲突时在归档内加 `original-` 前缀。
-- `file.sig` 是原件的 OpenPGP 分离签名；原件凭证为 `file.ots` / `file-<机构>.tsr`，签名凭证为 `file.sig.ots` / `file.sig-<机构>.tsr`。
+- `file.sig` 是原件的 OpenPGP 分离签名；原件凭证为 `file.ots` / `file-<机构>.tsr`，签名凭证为 `file.sig.ots` / `file.sig-<机构>.tsr`。网页验证页的单项下载名会还原为原件名（如 `人是.pdf` 对应 `人是.pdf-digicert.tsr`），归档内部仍使用固定名称。
 - 外层归档保留 `.asot` 或 `.fsot` 后缀即可随意改名，`.asot` 另选的原件也不要求原名；验证以实际摘要和签名为准。单独追加 `file.sig` 不会让它取得旧时间戳。旧版用原名作凭证前缀的归档不支持直接导入，可以解包后验证或重新打包。
 
 ## 测试

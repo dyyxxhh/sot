@@ -120,6 +120,14 @@ try {
   await expectText('verify-status', '与提供的本地区块记录相符 · 区块 358391');
 
   await expectText('verify-summary', '联合校验未通过');
+  assert.deepEqual(await id('verify-status').locator('.downloads a').allTextContents(), [
+    '下载 hello-world.txt', '下载 hello-world.txt-freetsa.tsr', '下载 hello-world.txt.ots',
+  ]);
+  for (const [shown, stored] of [
+    ['hello-world.txt', 'hello-world.txt'],
+    ['hello-world.txt-freetsa.tsr', 'file-freetsa.tsr'],
+    ['hello-world.txt.ots', 'file.ots'],
+  ]) assert.deepEqual(await readFile(await download('verify-status', shown)), extract(archive, stored));
   await expectText('verify-summary', '2026.11.24 10:46.43');
   await expectText('verify-summary', '24 小时');
   await expectText('verify-summary', '300 秒');
@@ -162,7 +170,12 @@ try {
   await click('verify-local');
   await expectText('verify-status', 'OpenPGP：有效');
   assert.doesNotMatch(await id('verify-status').innerText(), /结合验签/);
-  for (const name of entries(renamed)) assert.deepEqual(await readFile(await download('verify-status', name)), extract(renamed, name));
+  for (const [shown, stored] of [
+    ['hello-world.txt', 'hello-world.txt'],
+    ['hello-world.txt.sig', 'file.sig'],
+    ['hello-world.txt-freetsa.tsr', 'file-freetsa.tsr'],
+    ['hello-world.txt.ots', 'file.ots'],
+  ]) assert.deepEqual(await readFile(await download('verify-status', shown)), extract(renamed, stored));
   for (const armored of [true, false]) {
     const args = armored ? ['--armor'] : [];
     const secretFixture = gpg('--pinentry-mode', 'loopback', '--passphrase', '', ...args, '--export-secret-keys', 'fixture@example.invalid');
@@ -199,6 +212,8 @@ try {
   await file('verify-original', { name: 'different-name.txt', mimeType: 'text/plain', buffer: await readFile(original) });
   await click('verify-local');
   await expectText('verify-status', 'file-freetsa.tsr（原文件）：有效');
+  assert.equal(await id('verify-status').getByRole('link', { name: '下载 different-name.txt-freetsa.tsr' }).count(), 1);
+  assert.deepEqual(await readFile(await download('verify-status', 'different-name.txt-freetsa.tsr')), extract(renamedProof, 'file-freetsa.tsr'));
   await file('verify-original', { name: 'different-name.txt', mimeType: 'text/plain', buffer: Buffer.from('changed') });
   await click('verify-local');
   await expectText('verify-status', '时间戳与文件不匹配');

@@ -14,6 +14,8 @@ Sign of Time · 独立验证说明
   file.sig.ots / file.sig-digicert.tsr -> 签名 file.sig
   file.sig                            -> abc 的二进制或装甲 OpenPGP 分离签名
   其他机构如 FreeTSA 对应 file-freetsa.tsr，规则相同。
+  网页验证页的单项下载会把这些固定条目名还原为原件名（如人是.pdf 对应
+  人是.pdf-digicert.tsr）；归档内的名称仍为上面的固定名称。
 
 OpenPGP：先在本地校对公钥指纹，再导入公钥、用 gpg 验签。
 签名应针对原始字节，例如 gpg --detach-sign abc；不要使用 --textmode。

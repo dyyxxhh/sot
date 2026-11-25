@@ -56,5 +56,20 @@ export async function readBundle(file, external) {
     proofs.push({ ...proof, blob, label });
   }
   if (!proofs.length) throw new Error('归档中没有时间戳。');
-  return { original, signature, proofs, entries };
+  const originalFilename = originalName
+    ? originalName.startsWith('original-') && isReserved(originalName.slice('original-'.length))
+      ? originalName.slice('original-'.length)
+      : originalName
+    : external?.name;
+  const displayName = label => {
+    if (label === originalName) return originalFilename ?? label;
+    if (!originalFilename) return label;
+    if (label === SIGNATURE_ENTRY) return `${originalFilename}.sig`;
+    const proof = parseProofEntry(label);
+    if (!proof) return label;
+    const target = proof.target === 'signature' ? `${originalFilename}.sig` : originalFilename;
+    return proof.type === 'ots' ? `${target}.ots` : `${target}-${proof.authority}.tsr`;
+  };
+  const downloads = [...entries].map(([label, blob]) => [displayName(label), blob]);
+  return { original, signature, proofs, entries, downloads };
 }

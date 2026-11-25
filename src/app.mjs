@@ -216,7 +216,7 @@ function verify(online) {
   void run('verify', 'verify-status', async () => {
     const headers = await localHeaders();
     const { lines, summary } = await verifyFiles({ original, signature, proofs, publicKey, headers, online });
-    report('verify-status', lines, archive ? [...archive.entries] : [], '归档内文件（可单独下载；不代表已通过验证）');
+    report('verify-status', lines, archive?.downloads ?? [], '归档内文件（可单独下载；不代表已通过验证）');
     showVerifySummary(summary);
   });
 }
